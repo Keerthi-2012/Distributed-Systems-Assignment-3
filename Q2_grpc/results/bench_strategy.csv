@@ -1,0 +1,4 @@
+workers,strategy,dataset,records,batch_size,rate_target,query_clients,stale_queries,stream_seconds,stream_throughput,e2e_seconds,e2e_throughput,load_imbalance,worker_shares,cpu_coordinator,rss_mb_coordinator,cpu_worker,rss_mb_worker,cpu_client,rss_mb_client,e2e_throughput_min,e2e_throughput_max,repeats
+4,round_robin,large.in,10000000,1000,0,0,0,4.3554,2295988,4.3805,2282864,1.0,2500000/2500000/2500000/2500000,147.7,63.1,101.2,46.4,100.5,734.4,2177520,3406378,3
+4,least_loaded,large.in,10000000,1000,0,0,0,2.8309,3532437,2.8535,3504429,1.003,2508000/2492000/2507000/2493000,145.2,63.6,101.7,47.2,102.4,729.5,2182372,3609622,3
+4,hash_server,large.in,10000000,1000,0,0,0,14.4582,691647,14.4957,689861,1.023,2557855/2479484/2481834/2480827,127.0,69.7,31.7,45.7,21.1,748.9,672821,796450,3

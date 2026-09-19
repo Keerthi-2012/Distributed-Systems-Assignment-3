@@ -1,0 +1,199 @@
+// loganalytics.proto - gRPC interface for HW3 Q2 (real-time server log analytics).
+//
+// Same problem as HW2 Q7, but the log records now arrive as a live stream.
+//
+//   stream_client ──StreamRecords──▶ Coordinator ──Process (1 stream per worker)──▶ Worker ×W
+//   dashboard / query_client ──GetAnalytics / WatchAnalytics──▶ Coordinator ──PullDelta──▶ Worker ×W
+//
+// Design decisions (explained in README §4):
+//   * Records travel in COLUMNAR batches: one packed repeated field per column.
+//     Packed scalars decode in C inside protobuf, so a batch of 1000 records is
+//     one cheap message instead of 1000 small objects. Batch size 1 is still
+//     allowed, which is how per-record streaming granularity is studied.
+//   * response_time is sent as an integer in micro-units (value x 1,000,000).
+//     All sums are then exact 64-bit integers, so combining partial results from
+//     many workers can never introduce floating-point drift.
+//   * Workers keep only mergeable state (counts, sums, min, max). The coordinator
+//     PULLS DELTAS (what changed since the last pull) and folds them into the
+//     global state, like MPI_Reduce done incrementally.
+
+syntax = "proto3";
+
+package loganalytics;
+
+// ------------------------------------------------------------------ records
+
+// First message of an ingestion stream: the "N K S" header line of the dataset.
+message StreamHeader {
+  int64  n         = 1;   // records the source intends to send (informational)
+  int32  k         = 2;   // size of the Top-K lists
+  int32  s         = 3;   // number of servers (informational)
+  string source_id = 4;   // free-form name of the source, shown on the dashboard
+}
+
+// A batch of records, one packed array per column. All arrays have equal length.
+message RecordBatch {
+  uint64          seq                 = 1;  // batch number within its stream
+  repeated int64  timestamp           = 2;
+  repeated int32  server_id           = 3;
+  repeated int32  endpoint_id         = 4;
+  repeated int32  user_id             = 5;
+  repeated int32  status_code         = 6;
+  repeated int64  response_time_micro = 7;  // response_time * 1e6, rounded
+  repeated int64  bytes_sent          = 8;
+}
+
+message IngestMessage {
+  oneof payload {
+    StreamHeader header = 1;
+    RecordBatch  batch  = 2;
+  }
+}
+
+message IngestSummary {
+  int64  records_received = 1;
+  int64  batches_received = 2;
+  double seconds          = 3;  // time between first and last message of this stream
+}
+
+// ------------------------------------------------------------------ analytics
+
+message ServerEntry {
+  int32 server_id           = 1;
+  int64 count               = 2;
+  int64 response_time_micro = 3;  // SUM, average is computed when printed
+}
+
+message EndpointEntry {
+  int32 endpoint_id = 1;
+  int64 count       = 2;
+  int64 bytes       = 3;
+}
+
+message WorkerInfo {
+  string address           = 1;
+  int64  records_routed    = 2;  // sent to this worker by the coordinator
+  int64  records_processed = 3;  // counted by this worker (as of the last pull)
+  int32  queue_depth       = 4;  // batches waiting in the coordinator for this worker
+  bool   healthy           = 5;
+}
+
+message AnalyticsQuery {
+  int32 k                   = 1;  // 0 = use K from the stream header
+  bool  fresh               = 2;  // pull deltas from the workers before answering
+  bool  wait_for_completion = 3;  // block until every routed record is processed
+  double timeout_seconds    = 4;  // for wait_for_completion, 0 = no limit
+}
+
+message AnalyticsSnapshot {
+  // HW2 Q7 analytics
+  int64 total_requests      = 1;
+  int64 successful_requests = 2;
+  int64 failed_requests     = 3;
+  int64 response_time_sum_micro = 4;
+  int64 min_response_time_micro = 5;
+  int64 max_response_time_micro = 6;
+  int64 total_bytes         = 7;
+  int64 status_2xx          = 8;
+  int64 status_3xx          = 9;
+  int64 status_4xx          = 10;
+  int64 status_5xx          = 11;
+  int64 busiest_interval    = 12;
+  int64 busiest_count       = 13;
+  repeated ServerEntry   top_servers   = 14;
+  repeated EndpointEntry top_endpoints = 15;
+  int32 k                   = 16;
+
+  // system state, for the dashboard
+  int64  records_ingested   = 20;  // received by the coordinator
+  int64  records_processed  = 21;  // included in the analytics above
+  int32  active_streams     = 22;
+  int64  snapshot_version   = 23;  // increases with every delta merge
+  double uptime_seconds     = 24;
+  double ingest_rate        = 25;  // records/s over the last few seconds
+  double process_rate       = 26;
+  repeated WorkerInfo workers = 27;
+  string strategy           = 28;
+  int64  distinct_servers   = 29;
+  int64  distinct_endpoints = 30;
+  int64  distinct_intervals = 31;
+  bool   complete           = 32;  // no active stream and nothing still in flight
+}
+
+message WatchRequest {
+  int32  k                = 1;
+  double interval_seconds = 2;  // how often to push a snapshot
+}
+
+message ResetRequest {}
+message ResetResponse { bool ok = 1; string message = 2; }
+
+service LogAnalytics {
+  // Client-streaming ingestion: header first, then any number of batches.
+  rpc StreamRecords (stream IngestMessage) returns (IngestSummary);
+
+  // Point-in-time analytics query (usable while ingestion is still running).
+  rpc GetAnalytics (AnalyticsQuery) returns (AnalyticsSnapshot);
+
+  // Server-streaming: the coordinator pushes a fresh snapshot every interval.
+  rpc WatchAnalytics (WatchRequest) returns (stream AnalyticsSnapshot);
+
+  // Clears all state on the coordinator and the workers (only when idle).
+  rpc Reset (ResetRequest) returns (ResetResponse);
+}
+
+// ------------------------------------------------------------------ worker side
+
+// Mergeable partial state. Maps are sent as parallel packed arrays (faster than
+// proto maps in Python). Scalars are deltas since the previous pull.
+message PartialStats {
+  int64 total       = 1;
+  int64 success     = 2;
+  int64 failed      = 3;
+  int64 count_2xx   = 4;
+  int64 count_3xx   = 5;
+  int64 count_4xx   = 6;
+  int64 count_5xx   = 7;
+  int64 total_bytes = 8;
+  int64 time_sum_micro = 9;
+  int64 time_min_micro = 10;   // only meaningful when total > 0
+  int64 time_max_micro = 11;
+
+  repeated int32 server_ids         = 12;
+  repeated int64 server_counts      = 13;
+  repeated int64 server_time_micro  = 14;
+
+  repeated int32 endpoint_ids       = 15;
+  repeated int64 endpoint_counts    = 16;
+  repeated int64 endpoint_bytes     = 17;
+
+  repeated int64 interval_ids       = 18;
+  repeated int64 interval_counts    = 19;
+
+  int64 records_processed = 20;   // cumulative, NOT a delta
+  int64 batches_processed = 21;   // cumulative
+
+  // Delta number. The coordinator acknowledges it in the next PullRequest; until
+  // then the worker keeps this delta and re-sends it (with newer counts merged
+  // in) if the acknowledgement does not arrive. Each epoch is merged once.
+  uint64 epoch = 22;
+}
+
+message ProcessAck {
+  int64 records_processed = 1;
+  int64 batches_processed = 2;
+}
+
+message PullRequest {
+  uint64 ack_epoch = 1;   // last epoch the coordinator has merged (0 = none)
+}
+
+service Worker {
+  // One long-lived client stream per worker; the coordinator pushes batches.
+  rpc Process (stream RecordBatch) returns (ProcessAck);
+
+  // Returns everything counted since the last ACKNOWLEDGED pull.
+  rpc PullDelta (PullRequest) returns (PartialStats);
+
+  rpc Reset (ResetRequest) returns (ResetResponse);
+}
