@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package foodordering;
+
+service FoodOrderingService {
+  rpc ListRestaurants(RestaurantRequest) returns (RestaurantResponse);
+  rpc PlaceOrder(OrderRequest) returns (OrderResponse);
+  rpc GetOrderStatus(OrderStatusRequest) returns (OrderStatusResponse);
+  rpc UpdateOrderStatus(OrderStatusUpdate) returns (Acknowledge);
+  rpc SubscribeToOrderUpdates(OrderTrackRequest) returns (stream OrderUpdate);
+  // helper RPC, not in the spec's client menu list, needed so a restaurant can see its own orders
+  rpc ListRestaurantOrders(RestaurantOrdersRequest) returns (RestaurantOrdersResponse);
+}
+
+// empty request, kept as a message for forward compatibility
+message RestaurantRequest {}
+
+message FoodItem {
+  string name = 1;
+  int32 price = 2;
+}
+
+message Restaurant {
+  string name = 1;
+  repeated FoodItem items = 2;
+}
+
+message RestaurantResponse {
+  repeated Restaurant restaurants = 1;
+}
+
+message OrderItem {
+  string food_name = 1;
+  int32 quantity = 2;
+}
+
+message OrderRequest {
+  string customer_id = 1;
+  string restaurant_name = 2;
+  repeated OrderItem items = 3;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  int32 total = 2;
+  string status = 3;
+}
+
+message OrderStatusRequest {
+  string order_id = 1;
+}
+
+message OrderStatusResponse {
+  string order_id = 1;
+  string status = 2;
+}
+
+// restaurant_name is who is making the change, used for ownership checks
+message OrderStatusUpdate {
+  string order_id = 1;
+  string restaurant_name = 2;
+  string new_status = 3;
+}
+
+message Acknowledge {
+  bool success = 1;
+  string message = 2;
+}
+
+message OrderTrackRequest {
+  string order_id = 1;
+}
+
+message OrderUpdate {
+  string order_id = 1;
+  string status = 2;
+}
+
+message RestaurantOrdersRequest {
+  string restaurant_name = 1;
+}
+
+message OrderSummary {
+  string order_id = 1;
+  string status = 2;
+  int32 total = 3;
+}
+
+message RestaurantOrdersResponse {
+  repeated OrderSummary orders = 1;
+}
