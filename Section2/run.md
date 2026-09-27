@@ -17,6 +17,12 @@ Everything here has been run on RCE as written.
    one you get `Access denied by pam_slurm_adopt`. So `salloc` first, then `ssh`.
 3. **Never use `localhost` when the client and the server are on different
    nodes.** Use the node's name, e.g. `node01:51087`.
+4. **Always ask for `--cpus-per-task`.** This one is easy to miss and it silently
+   ruins timings. `--nodes=N --ntasks-per-node=1` on its own gives you **one
+   physical core per node** — `nproc` says 2, but those are the two hyperthreads
+   of a single core, so two programs on a node take twice as long as one. With
+   `--cpus-per-task=8` two mappers on the same node both finish in 1.22 s; without
+   it they take 2.49 s against 1.27 s for one. Every benchmark below asks for it.
 
 ---
 
@@ -77,7 +83,7 @@ shape as the course's `Mapreduce_distributed.sh`.
 ### 2.2 Quick check on one node
 
 ```bash
-salloc --nodes=1 --ntasks-per-node=1 --time=00:20:00
+salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:20:00
 cd ~/HW3/Section2
 ./bin/mapper < data/small.in | sort | ./bin/combiner | sort | ./bin/reducer
 ```
@@ -93,7 +99,7 @@ exit                      # releases the allocation
 ### 2.3 Correctness — 34 checks
 
 ```bash
-salloc --nodes=1 --ntasks-per-node=1 --time=00:30:00
+salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:30:00
 cd ~/HW3/Section2 && bash scripts/verify_q1.sh      # add "full" for medium+large
 exit
 ```
@@ -163,7 +169,7 @@ open; closing it releases the nodes and kills everything.
 ```bash
 ssh <your-username>@rce.iiit.ac.in
 cd ~/HW3/Section2
-salloc --nodes=4 --ntasks-per-node=1 --time=01:00:00
+salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=01:00:00
 
 scontrol show hostnames $SLURM_JOB_NODELIST    # e.g. node01 node02 node03 node06
 bash scripts/rce_start.sh                      # coordinator on node 1,
@@ -251,7 +257,7 @@ exit                    # releases the allocation
 
 ```bash
 cd ~/HW3/Section2
-salloc --nodes=4 --ntasks-per-node=1 --time=00:20:00 bash -c '
+salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=00:20:00 bash -c '
   bash scripts/rce_start.sh
   C=$(cat logs/coord_addr.txt)
   N=($(scontrol show hostnames $SLURM_JOB_NODELIST))
@@ -266,7 +272,7 @@ salloc --nodes=4 --ntasks-per-node=1 --time=00:20:00 bash -c '
 ### 3.8 Correctness — 76 checks
 
 ```bash
-salloc --nodes=1 --ntasks-per-node=1 --time=00:40:00
+salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:40:00
 cd ~/HW3/Section2 && ~/HW3/venv/bin/python3 scripts/verify_q2.py
 exit
 ```
@@ -337,6 +343,7 @@ cd ../.. && bash scripts/run_local.sh stop
 | `ModuleNotFoundError: No module named 'grpc'` | you used the system `python3` (3.6). Use `~/HW3/venv/bin/python3` |
 | the query returns zeros | the stream has not started yet, or you queried a coordinator that was reset. Use `--final` to wait for the stream to finish |
 | `can't honor --ntasks-per-node` | harmless: more tasks than nodes, so some nodes run more than one |
+| timings do not improve when you add tasks | you probably did not ask for `--cpus-per-task`, so the whole node is giving you one core. Check with `taskset -pc $$` — two cpu numbers 24 apart (like `10,34`) are one core's two hyperthreads |
 | a script that starts a server over ssh never returns | write `cd X; nohup … &`, not `cd X && nohup … &` — with `&&` the whole list is backgrounded and the subshell holds ssh's streams open |
 | the benchmark says `correct=no` | state left over from an earlier run. Stream with `--reset`, and `bash scripts/rce_start.sh stop` between runs |
 

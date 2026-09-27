@@ -3,7 +3,17 @@
 #SBATCH --partition=debug
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
 #SBATCH --time=02:00:00
+#
+# --cpus-per-task=8 is essential, not a detail. Without it Slurm gives this job
+# ONE physical core per node (nproc says 2, but they are the two hyperthreads of
+# a single core: two mappers then take 2.49 s where one takes 1.27 s). With only
+# one core per node, 8 map tasks on 4 nodes timeshare 4 cores and show no gain
+# over 4 tasks, and mpirun -np 8 on one node runs 8 ranks on one core, which is
+# why MPI appeared not to scale at all. With 8 cpus per node, two mappers on a
+# node both finish in 1.22 s, and N map tasks and N MPI ranks each get N real
+# cores - which is what makes the comparison in the report fair.
 #SBATCH --output=results/q1_bench_%j.log
 #
 # bench_q1.sh - MapReduce benchmark sweep, AND the MapReduce-vs-MPI comparison.
@@ -73,7 +83,8 @@ run_tasks() {   # run_tasks <ntasks> <command using $TID>
         # round robin, one per node, instead of filling a node before moving on.
         local use=$ntasks
         [ "$use" -gt "${#NODES[@]}" ] && use=${#NODES[@]}
-        srun --ntasks="$ntasks" --nodes="$use" --distribution=cyclic --overlap \
+        srun --ntasks="$ntasks" --nodes="$use" --cpus-per-task=1 \
+             --distribution=cyclic --overlap \
              bash -c "TID=\$(printf %03d \$SLURM_PROCID); $cmd"
     else
         for i in $(seq 0 $((ntasks - 1))); do

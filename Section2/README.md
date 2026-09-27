@@ -24,8 +24,8 @@ against a fixed, written-down specification instead of against each other.
 
 | | Correctness vs `log_seq` | Headline result |
 | - | ------------------------ | --------------- |
-| **Q1** MapReduce (C++) | **34 / 34 checks** | 10M records in **4.92 s** with 4 map tasks on 4 nodes (3.4× speedup); shuffle **278× smaller** than the input |
-| **Q2** gRPC streaming (Python) | **76 / 76 checks** | **2.86M records/s** with 4 workers; queries answered throughout ingestion, p99 **33 ms** under one closed-loop client |
+| **Q1** MapReduce (C++) | **34 / 34 checks** | 10M records in **4.92 s** with 4 map tasks on 4 nodes (3.3× speedup); shuffle **278× smaller** than the input |
+| **Q2** gRPC streaming (Python) | **76 / 76 checks** | **3.00M records/s** with 4 workers (3.75× on 4); queries answered throughout ingestion, p99 **25 ms** under one closed-loop client |
 | **MPI** comparison (C++, reconstructed) | identical at 1, 2, 4, 8 processes | 10M records in 2.16 s at 8 processes |
 
 Full analysis, tables and plots: **[REPORT.md](REPORT.md)**. How to build and
@@ -232,6 +232,42 @@ Section2/
 ├── bin/                   built binaries (not in git)
 └── results/               verification output, benchmark CSVs, plots
 ```
+
+## 3b. How this is run, and why not Hadoop
+
+The assignment PDF names Apache Hadoop 3.3.6 on YARN for Q1. **That is not
+usable on RCE**, and the course has said so: the Hadoop environment there has a
+known issue, and until it is fixed a **Slurm-based script** is the accepted way
+to run the MapReduce programs.
+
+We confirmed the same thing independently before that note arrived: RCE's shared
+HDFS is read-only for a student account (its root is `hdfs:supergroup`, mode
+`drwxr-xr-x`), and no ResourceManager is configured at all, so no YARN job can be
+submitted.
+
+So Q1 is orchestrated by a shell script, in exactly the shape Hadoop Streaming
+would use:
+
+```
+split  ->  mapper (one per node, in parallel)  ->  sort
+       ->  combiner (one per node)             ->  sort (all together)
+       ->  reducer (one, sees everything)
+```
+
+| Script | Purpose |
+| ------ | ------- |
+| [scripts/run_q1.sh](scripts/run_q1.sh) | run the pipeline once, locally, any number of map tasks; checks the answer |
+| [scripts/bench_q1.sh](scripts/bench_q1.sh) | the distributed sweep on Slurm, map tasks one per node |
+
+The mapper, combiner and reducer are unchanged standalone executables that read
+stdin and write stdout, so the same three binaries would run under real Hadoop
+Streaming without modification. [Q1_mapreduce/run_hadoop.sh](Q1_mapreduce/run_hadoop.sh)
+is kept for that case and is the only thing that would need to change.
+
+Q2 follows the separate **RCE execution guide**: the coordinator on one compute
+node, workers and clients on other compute nodes, never the login node and never
+`localhost` across nodes. The workflow in the assignment PDF is for local testing
+and is covered in [run.md §5](run.md).
 
 ## 4. Shared analytics core
 
@@ -463,26 +499,28 @@ runs matched `log_seq`**.
 
 | Dataset | Records | 1 task | 2 tasks | 4 tasks | 8 tasks | speedup at 8 |
 | ------- | ------: | -----: | ------: | ------: | ------: | -----------: |
-| small   | 100,000 | 0.342 s | 0.319 s | 0.300 s | 0.609 s | 1.1× (at 4) |
-| medium  | 1,000,000 | 1.766 s | 1.106 s | 0.689 s | 0.999 s | 2.6× (at 4) |
-| large   | 10,000,000 | 16.666 s | 9.321 s | 4.918 s | 5.127 s | **3.4× (at 4)** |
+| small   | 100,000 | 0.342 s | 0.318 s | 0.296 s | 0.599 s | 1.2× (at 4) |
+| medium  | 1,000,000 | 1.701 s | 1.095 s | 0.696 s | 1.026 s | 2.4× (at 4) |
+| large   | 10,000,000 | 16.127 s | 9.383 s | 4.922 s | 5.182 s | **3.3× (at 4)** |
 
 **Observations**
 
-- **Four tasks is the best configuration, because the allocation has four
-  nodes.** On `large`, 1→2 is 1.79× and 1→4 is 3.39×, close to ideal. At eight
-  tasks it gets *worse* (5.127 s vs 4.918 s): two tasks now share each node, and
-  the map stage is limited by reading the input over the shared filesystem, so a
-  second task on the same node adds no bandwidth — only more partial rows for the
-  sort and combine stages to handle.
-- **The map phase dominates completely**: 16.09 s of the 16.67 s total on `large`
-  with one task, **96%**. Everything else — sort, combine, gather, reduce — is
-  under 0.6 s at every task count. The stacked plot shows this directly.
-- **Small inputs should not be distributed.** `small` gains almost nothing from 1
-  to 4 tasks (0.342 → 0.300 s) and is clearly slower at 8 (0.609 s): starting
-  processes across nodes costs more than the parallelism saves. MapReduce is a
-  batch tool with a fixed overhead; it pays off from roughly a million records
-  upward here.
+- **Four tasks is the best configuration.** On `large`, 1→2 is 1.72× and 1→4 is
+  3.28×, close to ideal. At eight tasks it gets *worse* (5.182 s vs 4.922 s): the
+  nodes are 2× Xeon Gold 5317 with 24 physical cores and 48 logical, and with two
+  tasks per node Slurm puts some pairs on sibling hyperthreads of one physical
+  core, which run at half speed each. The map stage is unchanged (4.453 s →
+  4.469 s) while sort and combine grow, so the total rises.
+- **The map phase is the whole job, and it is CPU-bound**: 15.535 s of the
+  16.127 s total on `large` with one task, **96%**. Reading the 397 MB input with
+  `cat` takes 0.26 s, while the mapper takes 13.26 s of which 13.16 s is user
+  CPU — the cost is parsing 10M lines, not fetching them.
+- **Ask for `--cpus-per-task`.** Without it, `--ntasks-per-node=1` gives one
+  physical core per node: two mappers then take 2.49 s against 1.27 s for one.
+  Every benchmark script requests it.
+- **Small inputs should not be distributed.** `small` gains little from 1 to 4
+  tasks (0.342 → 0.296 s) and is slower at 8 (0.599 s): starting processes across
+  nodes costs more than the parallelism saves.
 
 ### 10.2 What in-mapper combining saves
 

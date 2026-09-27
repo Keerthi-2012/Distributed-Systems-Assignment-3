@@ -3,6 +3,11 @@
 #SBATCH --partition=debug
 #SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4
+#
+# --cpus-per-task=4: without it Slurm hands out one physical core per node, and
+# the coordinator - which runs a gRPC thread pool alongside its own sender
+# threads - would be measured on a single core.
 #SBATCH --time=02:00:00
 #SBATCH --output=results/q2_bench_%j.log
 #
