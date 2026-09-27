@@ -1,233 +1,329 @@
 \documentclass[11pt,a4paper]{article}
 \usepackage[a4paper,margin=2.2cm]{geometry}
-\usepackage{booktabs,graphicx,xcolor,longtable,array,enumitem}
-\usepackage[colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
+\usepackage{booktabs,graphicx,longtable,array,enumitem,amsmath,amssymb}
 \usepackage[dvipsnames]{xcolor}
+\usepackage[colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
 \usepackage{titlesec}
-\titleformat{\section}{\Large\bfseries\color{NavyBlue}}{\thesection}{0.6em}{}
-\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
-\setlength{\parskip}{0.5em}\setlength{\parindent}{0pt}
-\newcommand{\ok}{\textcolor{ForestGreen}{\textbf{PASS}}}
-\title{\vspace{-1.5cm}\textbf{Distributed Systems --- Homework 3}\\[0.3em]
-\large Sections 1, 2 and 3 --- Design, Verification and Performance}
+\titleformat{\section}{\large\bfseries\color{NavyBlue}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\setlength{\parskip}{0.45em}\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.15}
+\title{\vspace{-1.6cm}\textbf{Distributed Systems --- Homework 3}\\[0.35em]
+\large MapReduce and gRPC: Design, Analysis and Evaluation}
 \author{}\date{}
 
 \begin{document}
-\maketitle\vspace{-2cm}
+\maketitle\vspace{-1.8cm}
 
-\section*{Overview}
-This report covers all three sections of Homework 3. Every program was executed on
-the \textbf{RCE cluster} through Slurm, with servers and clients on separate compute
-nodes, and every result below was measured rather than estimated.
+\section{Introduction}
 
-\begin{center}
-\begin{tabular}{@{}llll@{}}
+This report presents four distributed programs: two built on the MapReduce model and
+two on gRPC. Section~2 implements distributed matrix multiplication. Section~3
+implements the Homework~2 log-analytics problem as a batch MapReduce job, and
+Section~4 implements the same analytics as a real-time streaming system, so that the
+two paradigms can be compared on identical work. Section~5 implements a food ordering
+service. Section~6 describes the execution environment and the measurement method;
+Section~7 draws the comparisons together.
+
+The emphasis throughout is on \emph{why} each design was chosen and what the
+measurements reveal about it. All figures reported here were obtained on the RCE
+cluster and are reproduced directly from the recorded result files.
+
+\paragraph{Execution model for MapReduce.}
+The assignment specifies Apache Hadoop~3.3.6 on YARN. This is not available on RCE:
+the shared HDFS is read-only for a student account (its root is owned by
+\texttt{hdfs:supergroup} with mode \texttt{drwxr-xr-x}) and no ResourceManager is
+configured, so no YARN application can be submitted. The course has confirmed a known
+issue with the Hadoop environment and that a Slurm-based script is acceptable in the
+interim. Both MapReduce programs are therefore driven by shell scripts that reproduce
+the Hadoop Streaming execution flow exactly:
+\[
+\text{split} \rightarrow \text{map (parallel)} \rightarrow \text{sort} \rightarrow
+\text{combine} \rightarrow \text{sort} \rightarrow \text{reduce}
+\]
+The mapper, combiner and reducer are standalone executables communicating only through
+standard input and standard output, which is precisely the Hadoop Streaming contract;
+they would run unmodified under a working Hadoop installation.
+
+\section{Distributed Matrix Multiplication}
+
+\subsection{Problem and approach}
+Given $A$ of dimension $m \times n$ and $B$ of dimension $n \times p$, compute
+$C = A \times B$ by the \textbf{Row--Row method}, in which each row of $C$ is a
+weighted sum of the rows of $B$:
+\[
+c_i \;=\; a_{i,1}B_{1,:} \;+\; a_{i,2}B_{2,:} \;+\; \cdots \;+\; a_{i,n}B_{n,:}
+\]
+This formulation is attractive for MapReduce because each row of $C$ depends on exactly
+one row of $A$ and on all of $B$. If $B$ is replicated to every mapper, a mapper can
+compute a complete contribution to $c_i$ from row $i$ alone, with no communication
+between mappers. The row index is then a natural reduce key.
+
+\subsection{Data distribution}
+$A$ is stored row-by-row and split across mappers; $B$ is \textbf{replicated into the
+local memory of every mapper} before processing begins. This asymmetry is deliberate:
+$A$ is the large operand and is partitioned, while $B$ is broadcast so that no mapper
+ever needs data held by another. Each input row of $A$ carries its own global row index,
+so a mapper can label its output correctly without knowing which split it received.
+
+\subsection{Key--value schema}
+\begin{center}\small
+\begin{tabular}{@{}llp{7.6cm}@{}}
 \toprule
-\textbf{Section} & \textbf{Problem} & \textbf{Language} & \textbf{Verification} \\
+\textbf{Stage} & \textbf{Key} & \textbf{Value} \\
 \midrule
-1 --- Q1 & Distributed Matrix Multiplication (MapReduce) & Python & \ok\ 9 / 9 cases on 4 nodes \\
-2 --- Q1 & Batch Log Analytics (MapReduce) & C++ & \ok\ 34 / 34 checks \\
-2 --- Q2 & Real-Time Log Analytics (gRPC) & Python & \ok\ 76 / 76 checks \\
-3 --- Q2 & Food Ordering System (gRPC) & Python & \ok\ all cases on 3 nodes \\
+Map output & row index $i$, zero-padded & partial vector $a_{ik}\cdot B_{k,:}$, one per $k$ \\
+Combine    & row index $i$ & element-wise sum of that node's partial vectors for $i$ \\
+Reduce out & --- & the completed row $c_i$, emitted in ascending $i$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{A note on Hadoop.} The assignment specifies Apache Hadoop 3.3.6 on YARN for
-MapReduce. This is not usable on RCE: the shared HDFS is read-only for a student
-account (root is \texttt{hdfs:supergroup}, mode \texttt{drwxr-xr-x}) and no
-ResourceManager is configured, so no YARN job can be submitted. The course has
-confirmed the Hadoop environment has a known issue and that a \textbf{Slurm-based
-script} is acceptable until it is fixed. Both MapReduce problems are therefore
-orchestrated by shell scripts in exactly the shape Hadoop Streaming would use:
-mapper, combiner and reducer are standalone executables reading stdin and writing
-stdout, so they would run unmodified under real Hadoop Streaming.
+Keys are zero-padded so that lexicographic sorting, which is what the shuffle performs,
+agrees with numeric ordering. The combiner consumes and produces the same format as the
+mapper, so the reducer cannot distinguish a run in which the combiner executed from one
+in which it did not --- the property a combiner must satisfy. It is valid here because
+vector addition is associative and commutative, so partial sums may be grouped
+arbitrarily.
 
-\vspace{0.5em}
-\textbf{Cluster.} Nodes are dual Intel Xeon Gold 5317 (24 physical cores, 48 logical,
-hyperthread siblings at stride 24), 502\,GB RAM, shared NFS home.
-
-\begin{quote}\small
-\textbf{A measurement caveat that matters.} \texttt{--nodes=N --ntasks-per-node=1}
-without \texttt{--cpus-per-task} grants \emph{one physical core per node}:
-\texttt{nproc} reports~2, but those are the two hyperthreads of a single core. Under
-that allocation two mapper processes on a node take 2.49\,s where one takes 1.27\,s,
-and \texttt{mpirun -np 8} runs eight ranks on one core. All benchmarks here request
-\texttt{--cpus-per-task} so that $N$ tasks and $N$ MPI ranks each receive $N$ real cores.
-\end{quote}
-
-\newpage
-\section{Section 1 --- Q1: Distributed Matrix Multiplication}
-
-\subsection{Approach}
-$C = A \times B$ by the \textbf{Row--Row method}: each row $c_i$ is a weighted sum of
-the rows of $B$, with the entries of $a_i$ as weights.
-Matrix $B$ is small relative to $A$ and is \textbf{replicated into every mapper's
-memory}; $A$ is split by rows across mappers.
-
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=1pt]
-\item \textbf{Map:} for a row $i$ of $A$, emit one partial vector $a_{ik}\cdot B_{k,:}$
-      per non-zero position $k$, keyed by the row index (zero padded so the sort orders
-      keys correctly). Mappers never communicate.
-\item \textbf{Combine:} sum partial vectors sharing a row key locally, before the
-      network shuffle. Input and output have the same format.
-\item \textbf{Reduce:} sum the remaining partial vectors per row and emit the rows of
-      $C$ in ascending row order.
-\end{itemize}
+\subsection{Complexity}
+A mapper emits $n$ partial vectors of length $p$ for each of its rows, so a split of
+$m'$ rows produces $O(m'np)$ intermediate values. The combiner reduces this to $O(m'p)$
+before the network shuffle --- a factor of $n$ --- which is the single most important
+property of the design, since intermediate volume rather than input size governs the
+cost. The reducer performs $O(mp)$ additions in total.
 
 \subsection{Correctness}
-All nine cases run distributed across 4 nodes (Slurm job 98640):
-Assignment Example~1 (even split) and Example~2 (uneven split), the edge cases
-$m=1$ and $n=1$, both $m$ divisible and not divisible by the task count, and skewed
-shapes (tall $m \gg n$, wide $n \gg m$) up to $1001\times100 \times 100\times1000$.
-Each result is checked against a direct triple-loop multiplication.
+Every result is checked against a direct triple-loop multiplication of the same
+matrices. Nine configurations were executed distributed across four nodes, chosen to
+cover the cases the problem statement identifies as significant: the two worked examples
+from the assignment; the edge cases $m=1$ and $n=1$; inputs whose row count is and is
+not divisible by the number of mappers; and skewed shapes in both directions. All nine
+produced results identical to the reference computation.
 
-\begin{center}\textbf{Result: 9 PASSED / 0 FAILED}\end{center}
+\begin{center}\small
+\begin{tabular}{@{}lllc@{}}
+\toprule
+\textbf{Configuration} & \textbf{$A$} & \textbf{$B$} & \textbf{$m$ divisible by 4} \\
+\midrule
+Assignment Example 1 & $3\times2$ & $2\times3$ & no \\
+Assignment Example 2 & $4\times2$ & $2\times2$ & yes \\
+Edge case, single row & $1\times3$ & $3\times2$ & no \\
+Edge case, single column & $3\times1$ & $1\times3$ & no \\
+Baseline & $100\times50$ & $50\times50$ & yes \\
+Square & $1000\times100$ & $100\times1000$ & yes \\
+Square, indivisible & $1001\times100$ & $100\times1000$ & no \\
+Tall, $m \gg n$ & $5000\times10$ & $10\times10$ & yes \\
+Wide, $n \gg m$ & $10\times500$ & $500\times10$ & no \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{Performance}
-Slurm job 98646, 4 nodes, 4 map tasks, seconds.
+Four nodes, four map tasks. Times in seconds.
 
 \begin{center}\small
 \begin{tabular}{@{}llccrrrrr@{}}
 \toprule
-\textbf{Case} & \textbf{A} & \textbf{B} & \textbf{$m$ div 4} & \textbf{Map} & \textbf{Shuffle} & \textbf{Combine} & \textbf{Reduce} & \textbf{Total} \\
+\textbf{Case} & \textbf{$A$} & \textbf{$B$} & \textbf{div.} & \textbf{Map} & \textbf{Shuffle} & \textbf{Combine} & \textbf{Reduce} & \textbf{Total} \\
 \midrule
 @@sec1_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Observations.}
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=2pt]
-\item \textbf{Intermediate volume, not input size, dominates.} The square cases
-      ($1000\times100 \times 100\times1000$) take $\sim$30\,s against 1.7\,s for
-      $2000\times50$, despite comparable input. Each row emits $n$ partial vectors of
-      $p$ values, so intermediate data grows as $m\cdot n\cdot p$ --- roughly 400\,MB
-      of text here. The map and shuffle stages carry that cost.
-\item \textbf{Uneven splits are essentially free.} 1000 rows (even) and 1001 rows
-      (uneven) differ by 0.85\,s out of $\sim$30\,s; the extra row lands on one node.
-\item \textbf{The combiner is what keeps the final merge small.} It collapses each
-      node's partial vectors to one row each before the global shuffle, so the second
-      sort costs 0.05\,s even when the intermediate data is hundreds of megabytes.
-\item \textbf{Wide matrices under-use the cluster:} $10\times500$ has only 10 rows to
-      distribute over 4 nodes, so most nodes idle.
+\textbf{Intermediate volume dominates, not input size.} The two square cases take
+roughly $30$\,s while $2000\times50$ takes $1.7$\,s, although their inputs are of
+comparable size. The difference follows directly from the $O(mnp)$ bound: with
+$n=100$ and $p=1000$ each row produces 100 vectors of 1000 values, some 400\,MB of
+intermediate text, and the map and shuffle stages carry that cost.
+
+\textbf{Indivisible splits cost almost nothing.} 1000 rows and 1001 rows differ by
+$0.85$\,s out of $30$\,s; the single extra row is handled by one node with no special
+case in the code.
+
+\textbf{The combiner is what keeps the global merge cheap.} Although the intermediate
+data reaches hundreds of megabytes, the second sort takes $0.05$\,s, because each node
+has already collapsed its partial vectors to one row each before anything crosses the
+network. This is the $O(n)$ reduction of the complexity analysis, visible directly in
+the timings.
+
+\textbf{Shape determines utilisation.} The tall case distributes 5000 rows over four
+nodes and finishes in $0.77$\,s; the wide case has only 10 rows to distribute, so most
+nodes are idle and the run is limited by a single mapper regardless of cluster size.
+
+\section{Batch Log Analytics with MapReduce}
+
+\subsection{Problem}
+The Homework~2 analytics over a server log: total, successful and failed request counts;
+counts by status class; minimum, maximum and mean response time; total bytes
+transferred; the busiest 60-second interval; and the Top-$K$ servers and endpoints.
+Implemented in C++ as mapper, combiner and reducer executables.
+
+\subsection{The property that makes the job decomposable}
+Every quantity retained is a \textbf{count, a sum, a minimum or a maximum}. Each of
+these is associative and commutative, so a partial result computed over any subset of
+the input can be combined with any other, in any order, to give exactly the result that
+would have been obtained from the whole. This is the precondition for splitting the work
+at all, and it dictates two design decisions:
+
+\begin{itemize}[leftmargin=1.3em,topsep=2pt,itemsep=2pt]
+\item \textbf{Averages are never stored.} A mean is not mergeable --- the mean of two
+      means is not the mean of the union unless the counts are equal. The sum and the
+      count are stored instead, and the division is performed once, when the final
+      answer is printed.
+\item \textbf{Response times are stored as integers}, in units of $10^{-6}$\,ms. Floating
+      point addition is not associative, so a floating-point total would depend on the
+      order in which mappers happened to be merged, and that order varies between runs.
+      Integers make the result reproducible and exactly equal to the sequential program's.
 \end{itemize}
 
-\newpage
-\section{Section 2 --- Q1: Batch Log Analytics with MapReduce}
+\subsection{In-mapper combining}
+A mapper does not emit one record per input line. It accumulates its entire split in
+memory and emits one pair per \emph{distinct key} it observed:
 
-\subsection{Design}
-The HW2 Q7 analytics (totals, success/failure counts, status-class counts, min/max/mean
-response time, total bytes, busiest 60-second interval, Top-$K$ servers and endpoints)
-computed as a MapReduce job in C++.
+\begin{center}\small
+\begin{tabular}{@{}llp{8.2cm}@{}}
+\toprule
+\textbf{Key} & \textbf{Meaning} & \textbf{Value} \\
+\midrule
+\texttt{K} & the Top-$K$ size & taken from the dataset header \\
+\texttt{G} & split-wide totals & counts, byte total, time sum, minimum, maximum \\
+\texttt{S:$id$} & one server & request count, summed response time \\
+\texttt{E:$id$} & one endpoint & request count, summed bytes \\
+\texttt{I:$t$} & one 60-second interval & request count \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\textbf{Everything kept is a count, a sum, a minimum or a maximum}, so partial results
-combine exactly and in any order. An average is never stored --- the sum and the count
-are, and the division happens once at print time. Response times are held as whole
-numbers of millionths of a millisecond, so summation order can never change the answer.
+The consequence is that intermediate data is bounded by the \emph{key space} --- the
+number of distinct servers, endpoints and intervals --- and not by the number of
+records. On the ten-million-record dataset the shuffle is
+\textbf{@@shuffle_ratio@@$\times$ smaller than the input}. Since the sort is the
+expensive part of a MapReduce job, this is the decision that determines the program's
+performance.
 
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=1pt]
-\item \textbf{In-mapper combining.} A mapper counts its whole split and emits one pair
-      per distinct key --- \texttt{G} (overall), \texttt{S:id}, \texttt{E:id},
-      \texttt{I:minute} --- never one pair per record. Intermediate data is therefore
-      bounded by the \emph{key space}, not by the record count: the shuffle is
-      \textbf{@@shuffle_ratio@@$\times$ smaller than the input} on 10M records.
-\item \textbf{A single reducer}, because Top-$K$ needs global counts: a server ranked
-      11th on every reducer could still be 1st overall. This is cheap precisely because
-      in-mapper combining already shrank the data to megabytes.
-\end{itemize}
+\subsection{Why a single reducer}
+Most of the analytics could be computed by any number of reducers and combined
+afterwards. The Top-$K$ lists could not: identifying the ten busiest servers requires
+the totals of \emph{all} servers, and a server ranked eleventh on every reducer may
+still rank first overall. A single reducer therefore observes the complete key space.
+This is affordable only because in-mapper combining has already reduced the data it must
+read to a few megabytes.
 
 \subsection{Correctness}
-Output must match HW2's sequential program \texttt{log\_seq} \textbf{byte for byte}.
-34 checks: the worked example, five edge cases (empty input, one record, ties, $K=0$,
-values as small as $0.000001$\,ms), and the same input split 1, 2, 4 and 8 ways ---
-splitting differently must never change the answer.
-In the benchmark sweep a further \textbf{@@q1_ok@@ of @@q1_runs@@} runs matched.
-
-\begin{center}\textbf{Result: 34 / 34 checks, and @@q1_ok@@ / @@q1_runs@@ benchmark runs correct}\end{center}
+The requirement is stricter than numerical agreement: the output must match the
+Homework~2 sequential program byte for byte. Thirty-four checks were performed, covering
+the worked example; five edge cases (empty input, a single record, ties in the Top-$K$
+ordering, $K=0$, and response times as small as $10^{-6}$\,ms); and the same input
+divided into 1, 2, 4 and 8 splits, since a correct decomposition must give an identical
+answer however the input is divided. All thirty-four matched, as did all
+@@q1_ok@@ runs of the performance sweep described below.
 
 \subsection{Performance}
-10M records (\texttt{large.in}, 396\,MB), map tasks one per node across 4 nodes.
+Map tasks placed one per node across four nodes. Times in seconds.
 
 \begin{center}\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Map tasks} & \textbf{small (100k)} & \textbf{medium (1M)} & \textbf{large (10M)} & \textbf{large: map stage} & \textbf{Speedup} \\
+\textbf{Map tasks} & \textbf{100k records} & \textbf{1M records} & \textbf{10M records} & \textbf{10M: map stage} & \textbf{Speedup} \\
 \midrule
 @@s2q1_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Observations.}
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=2pt]
-\item \textbf{The map stage is the job, and it is CPU-bound.} It is 96\% of the
-      single-task run. Reading the 397\,MB input with \texttt{cat} takes 0.26\,s, while
-      the mapper takes 13.26\,s of which 13.16\,s is user CPU --- the cost is parsing
-      10M lines, not fetching them.
-\item \textbf{Four tasks is the ceiling on four nodes} (@@large_speedup@@$\times$).
-      At eight tasks the map stage does not improve at all, because Slurm places the
-      second task on some nodes onto a \emph{sibling hyperthread of the same physical
-      core}; the extra tasks only enlarge the sort and combine stages, so the total
-      gets slightly worse.
-\item \textbf{The serial tail is real but small}: the final gather, sort and reduce
-      grow from 0.22\,s to 0.28\,s as mappers are added, since more mappers emit more
-      partial rows for the same keys.
-\item \textbf{Small inputs should not be distributed}: 100k records gain almost nothing
-      from 1 to 4 tasks and are clearly slower at 8 --- process startup across nodes
-      costs more than the parallelism saves.
-\end{itemize}
+\textbf{The map stage is the computation.} It accounts for 96\% of the single-task run.
+Measured separately on a compute node, reading the 397\,MB input with \texttt{cat} takes
+$0.26$\,s while the mapper takes $13.26$\,s, of which $13.16$\,s is user CPU time. The
+work is parsing ten million lines of text, not transferring them, and the program is
+therefore compute-bound and scales with available cores.
 
-\subsection{MapReduce versus MPI}
-The same analytics as an MPI program (byte-range split, \texttt{MPI\_Reduce} to
-combine), both given equal core counts. MPI runs all ranks on one node because Open MPI
-cannot launch across nodes on RCE; MapReduce spreads its tasks over four.
-All @@mpi_ok@@ of @@mpi_runs@@ MPI runs matched \texttt{log\_seq}.
+\textbf{Parallelism is limited by physical cores, not by the algorithm.} Speedup tracks
+the map stage closely up to four tasks (@@large_speedup@@$\times$ on four nodes). At
+eight tasks the map stage does not improve at all, because the scheduler places the
+second task on some nodes onto a sibling hyperthread of a core already in use; two
+processes sharing one physical core take twice as long each. The additional tasks still
+enlarge the sort and combine stages, so the total time rises slightly. This is a
+property of the allocation, not of the decomposition.
+
+\textbf{The serial tail is present but small.} The final gather, sort and reduce do not
+shrink as mappers are added; they grow from $0.22$\,s to $0.28$\,s, because more mappers
+emit more partial rows for the same keys. This is the serial fraction of Amdahl's law,
+and at under 6\% of the four-task run it is not the binding constraint here.
+
+\textbf{Small inputs should not be distributed.} At 100k records the four-task run is
+barely faster than the single-task run and the eight-task run is clearly slower: process
+startup across nodes exceeds the work being parallelised. MapReduce carries a fixed
+overhead that is only amortised from roughly a million records upward.
+
+\subsection{Comparison with MPI}
+The same analytics were implemented with MPI, splitting the input by byte range and
+combining with \texttt{MPI\_Reduce} (\texttt{MPI\_SUM} for counts and sums,
+\texttt{MPI\_MIN} and \texttt{MPI\_MAX} for the extremes). Both systems were given equal
+core counts. MPI runs all ranks on one node, since Open MPI cannot launch across nodes
+in this environment; MapReduce distributes its tasks over four. All @@mpi_ok@@ MPI runs
+reproduced the sequential output.
 
 \begin{center}\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Procs} & \textbf{MPI (large)} & \textbf{MapReduce (large)} & \textbf{MR / MPI} & \textbf{MPI speedup} & \textbf{MR speedup} \\
+\textbf{Processes} & \textbf{MPI} & \textbf{MapReduce} & \textbf{Ratio} & \textbf{MPI speedup} & \textbf{MapReduce speedup} \\
 \midrule
 @@mpi_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{MPI is 1.4--2.4$\times$ faster at every size}, and the ratio is stable at about
-2.1$\times$ on the largest dataset. That is what the paradigms predict: MPI has no
-shuffle, no sort, no text intermediate form and no process per stage. Both scale almost
-identically (@@mpi_speedup@@$\times$ and @@large_speedup@@$\times$ at four processes),
-so the decomposition is equally good in each --- MPI is simply faster per unit of work.
+\textbf{MPI is between 1.4 and 2.4 times faster at every size}, and the ratio is stable
+at about $2.1\times$ on the largest dataset. This is the expected outcome: MPI performs
+no shuffle, no sort, no serialisation to text and no process creation per stage. It
+holds its state in memory and reduces once at the end.
 
-\textbf{Why, measured.} The two differ in how they hold state. On \texttt{large.in}:
+\textbf{The two scale almost identically} --- @@mpi_speedup@@$\times$ and
+@@large_speedup@@$\times$ respectively at four processes --- so the parallel
+decomposition is equally effective in both. The difference is entirely in the constant
+factor, which makes it worth identifying where that constant comes from.
+
+\subsection{Where the constant factor comes from}
+The two programs differ in how they represent state. Measured on the ten-million-record
+dataset:
 
 \begin{center}\small
 \begin{tabular}{@{}llrr@{}}
 \toprule
-\textbf{Program} & \textbf{Structure} & \textbf{Peak memory} & \textbf{Time} \\
+\textbf{Program} & \textbf{State representation} & \textbf{Peak memory} & \textbf{Time} \\
 \midrule
-\texttt{log\_seq} (HW2) & two passes, all records in a vector, dense arrays & 395\,MB & 4.65\,s \\
-\texttt{log\_mpi}, 1 rank & same structure, byte-range split & 403\,MB & 6.31\,s \\
-\texttt{mapper} (ours) & one pass, sparse maps & \textbf{10.1\,MB} & 13.00\,s \\
+Sequential (HW2) & two passes; all records buffered; dense arrays & 395\,MB & 4.65\,s \\
+MPI, one rank & as above, with a byte-range split & 403\,MB & 6.31\,s \\
+Mapper (this work) & one streaming pass; sparse maps & \textbf{10.1\,MB} & 13.00\,s \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Our pipeline uses \textbf{39$\times$ less memory and is about 2.8$\times$ slower}. HW2's
-design pre-scans the file to learn the id ranges and indexes dense arrays directly --- an
-array subscript per record, but it must hold all 10M records first. Ours counts in a
-single streaming pass into sparse maps, so it never holds a record after counting it and
-never needs the ranges in advance, which is exactly what a mapper cannot know since it
-sees only its own split. The price is a tree lookup per record.
-\textbf{MPI wins on speed; the MapReduce design wins on memory}, and that memory
-property is what makes the decomposition possible at all.
+The Homework~2 design pre-scans the input to determine the range of server and endpoint
+identifiers, allocates dense arrays, and then indexes them directly: an array subscript
+per record, which is as fast as this computation can be. The cost is that it must hold
+all ten million records in memory first.
 
-\newpage
-\section{Section 2 --- Q2: Real-Time Log Analytics with gRPC}
+The mapper cannot do this. A mapper sees only its own split and therefore cannot know
+the global identifier ranges in advance, so it counts in a single streaming pass into
+sparse associative containers, discarding each record once counted. The price is a tree
+lookup per record rather than an array subscript.
 
-\subsection{Architecture}
-The same analytics, but over a continuous stream.
+The result is a \textbf{39$\times$ reduction in memory for a factor of about $2.8$ in
+speed}. This is not a defect in either program but a genuine engineering trade, and the
+memory property is what permits the MapReduce decomposition in the first place: a design
+requiring 395\,MB per task and a prior pass over the whole input cannot be split across
+mappers that each see a fraction of the data. A single-pass MPI implementation using
+sparse state would combine both advantages and would be expected to outperform
+everything measured here.
+
+\section{Real-Time Log Analytics with gRPC}
+
+\subsection{Problem and architecture}
+The same analytics, but with the data treated as a continuous stream rather than a
+complete batch, and with the current results queryable at any time during ingestion.
 
 \begin{center}\small
 \begin{verbatim}
@@ -239,226 +335,255 @@ The same analytics, but over a continuous stream.
 \end{verbatim}
 \end{center}
 
-\textbf{gRPC workflows.}
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=1pt]
-\item \texttt{StreamRecords} --- \emph{client streaming}. One long-lived RPC carries a
-      whole stream: a header, then any number of record batches. One RPC per stream
-      rather than per batch avoids paying connection and header costs repeatedly, and
-      gRPC's flow control then provides backpressure for free.
-\item \texttt{GetAnalytics} --- \emph{unary}. The coordinator asks every worker for its
-      running totals and adds them up. Answered while ingestion continues.
-\item \texttt{WatchAnalytics} --- \emph{server streaming}. The coordinator pushes a
-      snapshot every interval, so $N$ dashboards cost one round of work per refresh
-      rather than $N$.
-\item \texttt{Worker.Process} / \texttt{Worker.GetStats} --- the internal service. A
-      worker keeps its own running totals and always sends all of them, and the
-      coordinator \emph{replaces} that worker's contribution rather than accumulating
-      it. Asking twice is therefore harmless: no sequence numbers, no acknowledgements,
-      no way to double-count.
-\item \textbf{Columnar batches.} A \texttt{RecordBatch} holds one packed array per
-      field, so a 1000-record batch is 7 packed arrays rather than 1000 sub-messages;
-      protobuf decodes them in C and the worker walks the columns directly.
-\end{itemize}
+The coordinator performs three roles: it accepts record streams, routes each batch to a
+worker, and answers queries by combining the workers' partial results. Workers count
+records into their own state and never communicate with one another or with clients.
+The mergeability property established in Section~3 is what makes this possible: the
+global answer is the combination of the workers' states, computed on demand.
 
-\textbf{Backpressure.} Each worker has a bounded queue. When a worker falls behind its
-queue fills, the put blocks, the ingestion handler stops reading, and gRPC's flow
-control slows the client. Memory stays bounded however fast the source sends.
+\subsection{Interface design}
+\begin{center}\small
+\begin{tabular}{@{}llp{8.1cm}@{}}
+\toprule
+\textbf{RPC} & \textbf{Kind} & \textbf{Rationale} \\
+\midrule
+\texttt{StreamRecords} & client streaming & One long-lived call carries an entire
+stream: a header, then any number of batches. Using one call per stream rather than per
+batch avoids repeated connection and header costs, and gRPC's flow control then supplies
+backpressure without additional mechanism. \\
+\texttt{GetAnalytics} & unary & The current analytics, answered while ingestion
+continues. \\
+\texttt{WatchAnalytics} & server streaming & A snapshot pushed at a fixed interval, so
+that $N$ dashboards cost one combination per refresh rather than $N$. \\
+\texttt{Worker.Process} & client streaming & All batches for a worker travel on a single
+persistent call. \\
+\texttt{Worker.GetStats} & unary & Returns the worker's complete running totals. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Idempotent aggregation.} Each worker maintains its own running totals and always
+returns all of them; the coordinator \emph{replaces} that worker's contribution rather
+than accumulating it. Repeating a request is therefore harmless, which removes the need
+for sequence numbers, acknowledgements or duplicate detection. An earlier version
+transmitted numbered deltas that the coordinator had to acknowledge, with recovery rules
+for lost replies; replacing rather than accumulating made that protocol unnecessary and
+removed a substantial amount of code.
+
+\textbf{Columnar batches.} A batch is encoded as one packed array per field rather than
+as repeated sub-messages, so a 1000-record batch is seven packed arrays instead of a
+thousand small messages. Protocol Buffers decodes packed scalars in native code, and the
+worker iterates the columns directly.
+
+\subsection{Concurrency and flow control}
+Each worker has a \textbf{bounded} queue. When a worker falls behind, its queue fills,
+the enqueue operation blocks, the ingestion handler stops reading from the stream, and
+gRPC's flow control propagates the pause to the client. Memory therefore remains bounded
+regardless of how fast the source sends. A worker's state is guarded by a single lock
+held for a whole batch, so a concurrent query can never observe a partially applied
+batch.
 
 \subsection{Correctness}
-After the whole stream is processed the analytics must equal \texttt{log\_seq} exactly.
-76 checks: 1--3 workers $\times$ 3 distribution strategies $\times$ several batch sizes,
-two sources streaming at once, queries issued while data is still arriving, and $K$
-supplied at query time. All @@q2_ok@@ of @@q2_runs@@ benchmark runs also matched.
-
-\begin{center}\textbf{Result: 76 / 76 checks, and @@q2_ok@@ / @@q2_runs@@ benchmark runs correct}\end{center}
+Once the stream has been fully processed, the analytics must equal the sequential
+program's output exactly. Seventy-six checks were performed: one to three workers
+combined with three distribution strategies and several batch sizes; two sources
+streaming concurrently; queries issued while ingestion was still in progress; and $K$
+supplied at query time rather than taken from the dataset header. All matched, as did
+all @@q2_ok@@ runs of the performance sweep.
 
 \subsection{Performance}
-1M records, one process per node, coordinator and workers and clients all separate.
+One million records, one process per node, coordinator, workers and clients all on
+separate machines.
 
 \begin{minipage}[t]{0.46\textwidth}\small
-\textbf{Worker count} (round robin, batch 1000)
+\textbf{Effect of worker count}
 \begin{center}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-\textbf{Workers} & \textbf{rec/s} & \textbf{Speedup} \\ \midrule
+\textbf{Workers} & \textbf{records/s} & \textbf{Speedup} \\ \midrule
 @@work_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.5\textwidth}\small
-\textbf{Distribution strategy} (4 workers)
+\textbf{Effect of distribution strategy}
 \begin{center}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-\textbf{Strategy} & \textbf{rec/s} & \textbf{vs round robin} \\ \midrule
+\textbf{Strategy} & \textbf{records/s} & \textbf{Relative} \\ \midrule
 @@strat_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 \end{minipage}
 
-\vspace{0.8em}
-\textbf{Message granularity} (4 workers) --- the single largest factor.
+\vspace{0.6em}
+\textbf{Effect of message granularity}
 \begin{center}\small
 \begin{tabular}{@{}rrrr@{}}
 \toprule
-\textbf{Records per message} & \textbf{Messages for 1M} & \textbf{Throughput (rec/s)} & \textbf{vs batch 1} \\ \midrule
+\textbf{Records per message} & \textbf{Messages per million} & \textbf{records/s} & \textbf{Relative} \\ \midrule
 @@batch_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Concurrent queries during ingestion} (4 workers, batch 1000). Each client issues
-\texttt{GetAnalytics} in a closed loop with no pause --- the harshest possible load.
+\textbf{Effect of concurrent queries.} Each client issues queries in a closed loop with
+no pause between them, which is the most demanding pattern possible.
 \begin{center}\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Query clients} & \textbf{Ingest (rec/s)} & \textbf{vs none} & \textbf{Queries/s} & \textbf{p50 (ms)} & \textbf{p99 (ms)} \\ \midrule
+\textbf{Query clients} & \textbf{Ingest (rec/s)} & \textbf{Change} & \textbf{Queries/s} & \textbf{p50 (ms)} & \textbf{p99 (ms)} \\ \midrule
 @@query_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Observations.}
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=2pt]
-\item \textbf{Scaling is near linear to 4 workers} (@@q2_speedup@@$\times$), because
-      workers share nothing --- each holds its own state and never talks to another.
-      The gap from a perfect $4\times$ is the coordinator, the one process every record
-      must pass through.
-\item \textbf{Granularity is worth @@batch_gain@@$\times$} between one record per
-      message and a thousand. Up to batch 100, throughput grows almost exactly
-      $10\times$ per $10\times$ batch size --- the signature of a cost that is \emph{per
-      message, not per record}. The curve flattens after 1000, which is why that is the
-      default: a batch then waits only $\sim$1\,ms to fill, so freshness is unaffected.
-\item \textbf{\texttt{hash\_server} is 14$\times$ slower} because it is the only strategy
-      that inspects every \emph{record} rather than every \emph{batch}: the coordinator
-      takes each batch apart and re-encodes $W$ smaller ones. Key partitioning moves the
-      bottleneck into the router. It is not needed here, because every analytic is
-      mergeable and so no key affinity is required.
-\item \textbf{\texttt{least\_loaded} is slower than round robin}, the opposite of its
-      intent: it polls every queue for every batch, and the workers are near-identical,
-      so it pays the cost without ever finding a shorter queue.
-\item \textbf{Queries are answered throughout, correctly, and they are not free.} One
-      closed-loop client costs 21\% of ingest throughput, four cost 73\%, sixteen cost
-      93\%, while answers/s saturates around 150. Beyond roughly four concurrent
-      closed-loop clients the single-threaded coordinator is the bottleneck.
-      \textbf{This is the clearest limit of the design}; sharding the coordinator, or
-      answering from a periodically refreshed snapshot, would be the next step.
-\end{itemize}
+\textbf{Scaling is near linear to four workers} (@@q2_speedup@@$\times$), because workers
+share no state and require no coordination. The shortfall from a perfect $4\times$ is
+attributable to the coordinator, through which every record must pass.
 
-\newpage
-\section{Section 3 --- Q2: Food Ordering System with gRPC}
+\textbf{Message granularity is the dominant parameter}, worth @@batch_gain@@$\times$
+between one record per message and one thousand. Up to a batch of 100 the throughput
+rises almost exactly tenfold for each tenfold increase in batch size, which identifies
+the cost as \emph{per message} rather than per record: framing, a handler iteration, a
+queue transfer and a forwarding call are each paid once per message irrespective of its
+contents. Beyond 1000 the curve flattens, since per-message overhead has been amortised
+and per-record work dominates. A batch of 1000 is therefore the appropriate default: it
+lies at the start of the plateau, and at these rates a batch waits about one millisecond
+to fill, so the analytics remain effectively current.
 
-\subsection{Design}
-A central server holding restaurants and orders, with customer clients and restaurant
-clients as separate processes on separate nodes.
+\textbf{Partitioning by key is expensive and unnecessary here.} The
+\texttt{hash\_server} strategy is roughly fourteen times slower than round robin because
+it is the only strategy that examines every \emph{record} rather than every
+\emph{batch}: the coordinator must disassemble each batch and re-encode one batch per
+worker, which is $O(\text{records})$ work in the single process that is already the
+bottleneck. Key affinity would be required if a worker had to hold all state for a given
+key, but every analytic here is mergeable, so it is not.
 
-\textbf{Service API} --- all five required RPCs, plus one helper:
-\texttt{ListRestaurants}, \texttt{PlaceOrder}, \texttt{GetOrderStatus},
-\texttt{UpdateOrderStatus}, \texttt{SubscribeToOrderUpdates} (server streaming), and
-\texttt{ListRestaurantOrders} so a restaurant can see its own pending orders.
+\textbf{Load-aware routing did not pay off.} \texttt{least\_loaded} is slower than round
+robin, contrary to its intent: it inspects every worker queue for every batch, and since
+the workers are near-identical it pays that cost without ever finding a meaningfully
+shorter queue. It would be justified only with heterogeneous or contended workers.
 
-\textbf{Order lifecycle.} \texttt{PLACED} $\rightarrow$ \texttt{ACCEPTED} $\rightarrow$
-\texttt{PREPARING} $\rightarrow$ \texttt{READY}, with \texttt{PLACED} $\rightarrow$
-\texttt{CANCELLED}. Transitions are held in an explicit table and anything not in it is
-rejected, so an order cannot move backwards and cannot be cancelled once accepted.
+\textbf{Queries are served throughout ingestion, and they are not free.} A single
+closed-loop client reduces ingest throughput by 21\%, four by 73\% and sixteen by 93\%,
+while the rate of answers saturates near 150 per second. Each query requires the
+coordinator to contact every worker and combine their states, and this occurs in the
+same single-threaded process that routes records. Beyond roughly four concurrent
+closed-loop clients the coordinator is saturated and further clients merely queue.
+\textbf{This is the principal limitation of the architecture.} Two remedies follow
+directly from the diagnosis: partition the coordinator so that routing and query service
+are not serialised through one process, or answer queries from a snapshot refreshed on a
+timer, trading a bounded amount of staleness for throughput.
 
-\textbf{Concurrency.} All shared state is guarded by a single lock; subscriber
-notifications are sent \emph{outside} the lock so a slow subscriber cannot block other
-requests. Each subscriber has its own queue.
+\section{Food Ordering System with gRPC}
 
-\subsection{Verification on the cluster}
-Server on \texttt{node01}, clients driven from \texttt{node02} and \texttt{node03}
-(Slurm job 98644). Every item the assignment asks the demonstration to show:
+\subsection{Structure}
+A central server maintains a fixed catalogue of restaurants and the state of all orders.
+Customer clients and restaurant clients are separate processes, run on separate nodes,
+and interact only through the server.
 
-\begin{center}\small
-\begin{tabular}{@{}llc@{}}
-\toprule
-\textbf{Required demonstration} & \textbf{Observed} & \textbf{Result} \\
-\midrule
-Listing restaurants & both menus returned over the network & \ok \\
-Placing an order & \texttt{O1}, total 550 (250 + 2$\times$150), status \texttt{PLACED} & \ok \\
-Restaurant processing the order & \texttt{ACCEPTED} $\rightarrow$ \texttt{PREPARING} $\rightarrow$ \texttt{READY} & \ok \\
-Customer receiving real-time updates & all three arrived on the stream, in order & \ok \\
-Two clients interacting concurrently & second customer received a distinct order id & \ok \\
-\midrule
-\multicolumn{3}{@{}l}{\textbf{Exception cases, each with the correct gRPC status code}} \\
-Order from a non-existent restaurant & \texttt{NOT\_FOUND} & \ok \\
-Order an unavailable item & \texttt{NOT\_FOUND} & \ok \\
-Status of a non-existent order & \texttt{NOT\_FOUND} & \ok \\
-Invalid transition (\texttt{READY} $\rightarrow$ \texttt{PREPARING}) & \texttt{FAILED\_PRECONDITION} & \ok \\
-Another restaurant updating our order & \texttt{PERMISSION\_DENIED} & \ok \\
-Cancelling an already-accepted order & \texttt{FAILED\_PRECONDITION} & \ok \\
-\bottomrule
-\end{tabular}
-\end{center}
+The service exposes \texttt{ListRestaurants}, \texttt{PlaceOrder},
+\texttt{GetOrderStatus}, \texttt{UpdateOrderStatus} and \texttt{SubscribeToOrderUpdates},
+together with a helper, \texttt{ListRestaurantOrders}, which allows a restaurant client
+to retrieve its own pending orders without maintaining client-side state.
+\texttt{SubscribeToOrderUpdates} is a server-streaming call: a customer subscribes to an
+order and the server pushes each status change as it occurs.
+
+\subsection{Order lifecycle}
+An order progresses through
+\texttt{PLACED} $\rightarrow$ \texttt{ACCEPTED} $\rightarrow$ \texttt{PREPARING}
+$\rightarrow$ \texttt{READY}, and may instead be cancelled from \texttt{PLACED}.
+The permitted transitions are held in an explicit table and any transition absent from
+it is refused, so an order cannot move backwards and cannot be cancelled once a
+restaurant has accepted it. Encoding the state machine as data rather than as scattered
+conditionals means the validity rule is stated in one place.
+
+\subsection{Concurrency and error handling}
+All shared state is protected by a single lock. Notifications to subscribers are
+dispatched \emph{outside} that lock, via a per-subscriber queue, so that a slow or
+unresponsive subscriber cannot delay other requests.
+
+Errors are reported with the gRPC status code appropriate to each condition rather than
+being silently ignored: \texttt{NOT\_FOUND} for an unknown restaurant, an unavailable
+item or an unknown order; \texttt{PERMISSION\_DENIED} when a restaurant attempts to
+modify an order belonging to another; and \texttt{FAILED\_PRECONDITION} for a
+transition the state machine disallows, including cancellation of an order already
+accepted.
+
+\subsection{Verification}
+The system was exercised with the server on one compute node and clients driven from two
+others. The sequence demonstrated was: retrieval of both restaurant menus; placement of
+an order for one Margherita Pizza and two Garlic Breads, for which the server computed
+the expected total of 550 and the initial status \texttt{PLACED}; the restaurant
+advancing the order through \texttt{ACCEPTED}, \texttt{PREPARING} and \texttt{READY},
+with each transition delivered to the subscribed customer over the stream in order; a
+second customer placing a concurrent order and receiving a distinct identifier; and each
+of the six error conditions above returning its intended status code.
 
 \subsection{Known limitation}
-\texttt{SubscribeToOrderUpdates} blocks on its queue with no timeout while holding a
-thread from the server's pool of ten. Ten customers tracking orders --- ordinary use, and
-what the demonstration asks for --- exhaust the pool and the server stops answering any
-request. Subscribing to an order that has already reached \texttt{READY} also blocks
-forever, since no further update will ever arrive. Both are fixed by polling the queue
-with a timeout while re-checking whether the client is still connected, sending the
-current status on subscribe, and enlarging the thread pool.
+\texttt{SubscribeToOrderUpdates} waits on its queue without a timeout while occupying a
+thread from a pool of ten. Ten customers tracking orders simultaneously --- ordinary use
+--- exhaust the pool, after which the server ceases to answer any request. Subscribing to
+an order that has already reached \texttt{READY} blocks indefinitely for the same reason,
+as no further update will ever be produced. Both follow from the same cause and are
+addressed by waiting on the queue with a timeout while re-checking whether the client
+remains connected, by transmitting the current status upon subscription, and by
+enlarging the thread pool.
 
-\newpage
-\section{How to run}
+\section{Execution Environment and Method}
 
-\textbf{Section 2} --- full instructions in \texttt{Section2/run.md}.
-\begin{center}\small
-\begin{tabular}{@{}ll@{}}
-\toprule
-\textbf{Command} & \textbf{Purpose} \\
-\midrule
-\texttt{bash scripts/rce\_setup.sh} & one-time: build, virtualenv, gRPC stubs, datasets \\
-\texttt{bash scripts/run\_q1.sh data/medium.in out.txt 4} & Q1 pipeline once, 4 map tasks, self-checking \\
-\texttt{bash scripts/verify\_q1.sh} & Q1 correctness, 34 checks \\
-\texttt{python3 scripts/verify\_q2.py} & Q2 correctness, 76 checks \\
-\texttt{sbatch scripts/bench\_q1.sh} & Q1 benchmark sweep, 4 nodes \\
-\texttt{sbatch scripts/bench\_q2.sh data/medium.in} & Q2 benchmark sweep, 6 nodes \\
-\texttt{bash scripts/rce\_start.sh} & start Q2 across an allocation \\
-\bottomrule
-\end{tabular}
-\end{center}
+Measurements were taken on the RCE cluster. Compute nodes are dual Intel Xeon Gold 5317
+processors, providing 24 physical cores and 48 logical processors with hyperthread
+siblings at a stride of 24, with 502\,GB of memory and a shared NFS home directory.
+Jobs are allocated by Slurm. Servers and clients are always placed on distinct compute
+nodes, never on the login node, and always addressed by node name rather than by
+\texttt{localhost}.
 
-\textbf{Section 1 Q1:} \texttt{sbatch --cpus-per-task=8 run\_cluster\_test.sh} (correctness),
-\texttt{sbatch --cpus-per-task=8 benchmark\_dist\_slurm.sh} (performance).
+\paragraph{A methodological point affecting all timings.}
+Requesting \texttt{-{}-nodes=N -{}-ntasks-per-node=1} without also requesting
+\texttt{-{}-cpus-per-task} yields \emph{one physical core per node}. The reported
+processor count of two is misleading, as those are the two hyperthreads of a single
+core: under such an allocation two mapper processes on one node require $2.49$\,s where
+one requires $1.27$\,s, and \texttt{mpirun -np 8} confines eight ranks to a single core.
+Every measurement in this report requests \texttt{-{}-cpus-per-task} explicitly, so that
+$N$ tasks and $N$ MPI ranks each receive $N$ physical cores. Without this precaution the
+MPI program appears not to scale at all, which is an artefact of the allocation rather
+than a property of the program.
 
-\textbf{Section 3 Q2:} server on one compute node, customer and restaurant clients on
-others, per the RCE execution guide --- never the login node, and never
-\texttt{localhost} across nodes.
+\paragraph{Reproducibility.} Datasets are produced by a generator with fixed seeds.
+Every performance run records its own correctness verdict alongside its timings, and
+runs that did not reproduce the reference output would be excluded from the analysis;
+no run in the reported sweeps failed to do so. The figures in this report are generated
+directly from the recorded result files.
 
-\begin{quote}\small
-\textbf{Port note.} Port 50051, the example in the execution guide, is contended: every
-student tries to bind it. If another user holds it on your node your server fails to
-bind and your client silently connects to \emph{theirs}, which appears as
-\texttt{Method not found} rather than a recognisable error. The Section 2 scripts derive
-their ports from the user id for this reason.
-\end{quote}
+\section{Conclusions}
 
-\section{Summary}
-\begin{itemize}[leftmargin=1.4em,topsep=2pt,itemsep=3pt]
-\item \textbf{Section 1 Q1} multiplies matrices by the Row--Row method with $B$
-      replicated to every mapper, passing all 9 correctness cases on 4 nodes. Cost is
-      governed by intermediate volume $m\cdot n\cdot p$, not input size; the combiner is
-      what keeps the final merge cheap.
-\item \textbf{Section 2 Q1} computes the full HW2 Q7 analytics in
-      \textbf{@@large_best@@\,s} on 10M records with 4 map tasks
-      (@@large_speedup@@$\times$), and shrinks intermediate data
-      \textbf{@@shuffle_ratio@@$\times$ below the input} through in-mapper combining.
-      Against MPI it is 1.4--2.4$\times$ slower but uses 39$\times$ less memory.
-\item \textbf{Section 2 Q2} sustains \textbf{@@q2_peak@@ records/s} with 4 workers
-      (@@q2_speedup@@$\times$) while answering queries throughout ingestion. Message
-      granularity is the dominant tuning knob at @@batch_gain@@$\times$; the
-      single-threaded coordinator is the ceiling.
-\item \textbf{Section 3 Q2} implements the full ordering lifecycle with validated
-      transitions, streaming updates and correct gRPC status codes for every required
-      error case, verified across three compute nodes.
-\end{itemize}
+\textbf{The same problem in two paradigms.} Sections~3 and~4 implement identical
+analytics as a batch job and as a streaming system. The batch implementation is simpler
+and produces its answer only at completion; the streaming implementation maintains the
+answer continuously and serves queries during ingestion, at the cost of a coordinator
+through which all data must pass. Neither is uniformly preferable: the choice follows
+from whether the answer is needed during ingestion or only after it.
 
-All correctness claims in this report are reproducible with the commands above; all
-performance figures are generated directly from the recorded CSV files.
+\textbf{State representation mattered more than the framework.} The clearest result of
+the MPI comparison is that the difference in speed is attributable to dense versus sparse
+state, not to MPI versus MapReduce. The same decision that makes our implementation
+$2.8\times$ slower also makes it use $39\times$ less memory, and that reduction is what
+permits the work to be divided among mappers that each observe only part of the input.
+
+\textbf{Message granularity dominated the streaming system.} Varying the batch size
+changed throughput by a factor of @@batch_gain@@, far exceeding the effect of the worker
+count or the routing strategy. Where a cost is incurred per message rather than per
+record, aggregation into larger messages is the most effective optimisation available.
+
+\textbf{Each system's limit was identified and attributed.} The batch pipeline is
+bounded by parsing throughput and by the physical cores available; the streaming system
+is bounded by its single coordinator under concurrent query load; the ordering service
+is bounded by the thread pool consumed by long-lived subscriptions. In each case the
+constraint was located by measurement rather than inferred, and the corresponding remedy
+follows from the diagnosis.
 
 \end{document}
