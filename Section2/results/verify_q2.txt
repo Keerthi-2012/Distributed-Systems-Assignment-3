@@ -1,0 +1,81 @@
+Q2 correctness: query_client --final vs bin/log_seq
+date: 2026-09-27 15:55:02
+
+PASS  edge_empty.in W=1 round_robin batch=1
+PASS  edge_empty.in W=1 least_loaded batch=1
+PASS  edge_empty.in W=1 hash_server batch=1
+PASS  edge_empty.in W=2 round_robin batch=1
+PASS  edge_empty.in W=2 least_loaded batch=1
+PASS  edge_empty.in W=2 hash_server batch=1
+PASS  edge_empty.in W=3 round_robin batch=1
+PASS  edge_empty.in W=3 least_loaded batch=1
+PASS  edge_empty.in W=3 hash_server batch=1
+PASS  edge_k0.in W=1 round_robin batch=1
+PASS  edge_k0.in W=1 least_loaded batch=1
+PASS  edge_k0.in W=1 hash_server batch=1
+PASS  edge_k0.in W=2 round_robin batch=1
+PASS  edge_k0.in W=2 least_loaded batch=1
+PASS  edge_k0.in W=2 hash_server batch=1
+PASS  edge_k0.in W=3 round_robin batch=1
+PASS  edge_k0.in W=3 least_loaded batch=1
+PASS  edge_k0.in W=3 hash_server batch=1
+PASS  edge_odd.in W=1 round_robin batch=1
+PASS  edge_odd.in W=1 least_loaded batch=1
+PASS  edge_odd.in W=1 hash_server batch=1
+PASS  edge_odd.in W=2 round_robin batch=1
+PASS  edge_odd.in W=2 least_loaded batch=1
+PASS  edge_odd.in W=2 hash_server batch=1
+PASS  edge_odd.in W=3 round_robin batch=1
+PASS  edge_odd.in W=3 least_loaded batch=1
+PASS  edge_odd.in W=3 hash_server batch=1
+PASS  edge_single.in W=1 round_robin batch=1
+PASS  edge_single.in W=1 least_loaded batch=1
+PASS  edge_single.in W=1 hash_server batch=1
+PASS  edge_single.in W=2 round_robin batch=1
+PASS  edge_single.in W=2 least_loaded batch=1
+PASS  edge_single.in W=2 hash_server batch=1
+PASS  edge_single.in W=3 round_robin batch=1
+PASS  edge_single.in W=3 least_loaded batch=1
+PASS  edge_single.in W=3 hash_server batch=1
+PASS  edge_ties.in W=1 round_robin batch=1
+PASS  edge_ties.in W=1 least_loaded batch=1
+PASS  edge_ties.in W=1 hash_server batch=1
+PASS  edge_ties.in W=2 round_robin batch=1
+PASS  edge_ties.in W=2 least_loaded batch=1
+PASS  edge_ties.in W=2 hash_server batch=1
+PASS  edge_ties.in W=3 round_robin batch=1
+PASS  edge_ties.in W=3 least_loaded batch=1
+PASS  edge_ties.in W=3 hash_server batch=1
+PASS  sample.in W=1 round_robin batch=1
+PASS  sample.in W=1 least_loaded batch=1
+PASS  sample.in W=1 hash_server batch=1
+PASS  sample.in W=2 round_robin batch=1
+PASS  sample.in W=2 least_loaded batch=1
+PASS  sample.in W=2 hash_server batch=1
+PASS  sample.in W=3 round_robin batch=1
+PASS  sample.in W=3 least_loaded batch=1
+PASS  sample.in W=3 hash_server batch=1
+PASS  tiny.in W=1 round_robin batch=1000
+PASS  tiny.in W=1 least_loaded batch=1000
+PASS  tiny.in W=1 hash_server batch=1000
+PASS  tiny.in W=2 round_robin batch=1000
+PASS  tiny.in W=2 least_loaded batch=1000
+PASS  tiny.in W=2 hash_server batch=1000
+PASS  tiny.in W=3 round_robin batch=1000
+PASS  tiny.in W=3 least_loaded batch=1000
+PASS  tiny.in W=3 hash_server batch=1000
+PASS  small.in W=1 round_robin batch=1000
+PASS  small.in W=1 least_loaded batch=1000
+PASS  small.in W=1 hash_server batch=1000
+PASS  small.in W=2 round_robin batch=1000
+PASS  small.in W=2 least_loaded batch=1000
+PASS  small.in W=2 hash_server batch=1000
+PASS  small.in W=3 round_robin batch=1000
+PASS  small.in W=3 least_loaded batch=1000
+PASS  small.in W=3 hash_server batch=1000
+PASS  small.in query-time K=3
+PASS  3 concurrent sources -> 300000 records (want 300000)
+PASS  7 live snapshots consistent (7 mid-stream)
+PASS  small.in final after live queries
+
+passed 76, failed 0

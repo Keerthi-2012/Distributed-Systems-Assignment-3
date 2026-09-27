@@ -1,0 +1,211 @@
+// loganalytics.proto - the gRPC interface for Q2.
+//
+// Two services:
+//   LogAnalytics  the public one: clients stream records in and query analytics
+//   Worker        the internal one: coordinator -> analytics worker
+//
+// Keeping them apart makes the boundary explicit: the protocol between the
+// coordinator and its workers is an implementation detail and is free to change
+// without touching the interface that clients use.
+
+syntax = "proto3";
+
+package q7;
+
+// ===========================================================================
+// Public service: what a streaming client, a dashboard or a query client uses.
+// ===========================================================================
+service LogAnalytics {
+    // Ingestion. One long-lived client-streaming RPC carries a whole stream:
+    // a header first, then any number of record batches. One RPC per stream
+    // instead of one per batch avoids paying connection and header costs
+    // repeatedly, and gRPC's flow control then gives us backpressure for free.
+    rpc StreamRecords(stream IngestMessage) returns (IngestSummary);
+
+    // The analytics as they are now. Used by the query client and by the
+    // dashboard in polling mode.
+    rpc GetAnalytics(AnalyticsQuery) returns (AnalyticsSnapshot);
+
+    // The analytics, pushed repeatedly. Used by the dashboard, so it does not
+    // have to poll, and so many viewers cost one merge per refresh rather than
+    // one per viewer.
+    rpc WatchAnalytics(WatchRequest) returns (stream AnalyticsSnapshot);
+
+    // Clear all state, in the coordinator and in every worker.
+    rpc Reset(ResetRequest) returns (ResetResponse);
+}
+
+// ===========================================================================
+// Internal service: one instance runs per analytics worker.
+// ===========================================================================
+service Worker {
+    // All batches routed to this worker travel on one long-lived stream.
+    rpc Process(stream RecordBatch) returns (ProcessAck);
+
+    // Hand back this worker's running totals. The coordinator asks; a worker
+    // never needs to know who is asking or how often. Asking twice is safe,
+    // because the coordinator replaces this worker's numbers instead of adding
+    // to them.
+    rpc GetStats(StatsRequest) returns (PartialStats);
+
+    rpc Reset(ResetRequest) returns (ResetResponse);
+}
+
+// ===========================================================================
+// Ingestion messages
+// ===========================================================================
+
+message StreamHeader {
+    int64  n = 1;             // records the client intends to send
+    int32  k = 2;             // K from the dataset header: Top-K size
+    int32  s = 3;             // S from the dataset header: number of servers
+    string source_id = 4;     // names the source, so several can be told apart
+}
+
+// A batch of records, stored COLUMN BY COLUMN rather than as repeated
+// sub-messages. A batch of 1000 records is then 7 packed arrays instead of
+// 1000 little messages: protobuf decodes packed scalars in one go, and the
+// worker can walk the columns directly.
+//
+// response_time_micro is milliseconds * 1,000,000 as an integer. Integers add
+// exactly, so the merged total never depends on the order the workers happened
+// to be merged in (see README §1).
+message RecordBatch {
+    repeated int64 timestamp           = 1 [packed = true];
+    repeated int32 server_id           = 2 [packed = true];
+    repeated int32 endpoint_id         = 3 [packed = true];
+    repeated int32 user_id             = 4 [packed = true];
+    repeated int32 status_code         = 5 [packed = true];
+    repeated int64 response_time_micro = 6 [packed = true];
+    repeated int64 bytes_sent          = 7 [packed = true];
+    int64 batch_id = 8;
+}
+
+message IngestMessage {
+    oneof payload {
+        StreamHeader header = 1;
+        RecordBatch  batch  = 2;
+    }
+}
+
+message IngestSummary {
+    int64  records_received = 1;
+    int64  batches_received = 2;
+    double seconds = 3;
+    bool   accepted = 4;
+    string message = 5;
+}
+
+// ===========================================================================
+// Worker <-> coordinator
+// ===========================================================================
+
+message StatsRequest { }
+
+// A worker's whole running totals. The three maps travel as plain lists: the ids
+// in one list and their numbers in the others, in the same order.
+message PartialStats {
+    int64 total = 10;
+    int64 success = 11;
+    int64 failed = 12;
+    int64 count_2xx = 13;
+    int64 count_3xx = 14;
+    int64 count_4xx = 15;
+    int64 count_5xx = 16;
+    int64 total_bytes = 17;
+    int64 time_sum_micro = 18;
+    int64 time_min_micro = 19;
+    int64 time_max_micro = 20;
+
+    repeated int32 server_id         = 30 [packed = true];
+    repeated int64 server_count      = 31 [packed = true];
+    repeated int64 server_time_micro = 32 [packed = true];
+
+    repeated int32 endpoint_id    = 40 [packed = true];
+    repeated int64 endpoint_count = 41 [packed = true];
+    repeated int64 endpoint_bytes = 42 [packed = true];
+
+    repeated int64 interval_id    = 50 [packed = true];
+    repeated int64 interval_count = 51 [packed = true];
+}
+
+message ProcessAck {
+    int64 records_processed = 1;
+    int64 batches_processed = 2;
+}
+
+// ===========================================================================
+// Queries
+// ===========================================================================
+
+message AnalyticsQuery {
+    int32 k = 1;                   // 0 = use the K from the stream header
+    bool  wait_for_completion = 3; // block until every received record is counted
+    double timeout_seconds = 4;
+}
+
+message WatchRequest {
+    int32  k = 1;
+    double interval_seconds = 2;   // how often to push a snapshot
+}
+
+message WorkerStatus {
+    int32  index = 1;
+    string address = 2;
+    int64  batches_routed = 3;
+    int64  records_routed = 4;
+    int64  records_processed = 5;
+    int32  queue_depth = 6;
+    bool   healthy = 7;
+}
+
+// Every analytic as an exact integer. The average is deliberately NOT sent:
+// the client divides the sum by the count, so the displayed value is computed
+// the same way HW2 computes it.
+message AnalyticsSnapshot {
+    int64 total_requests = 1;
+    int64 successful_requests = 2;
+    int64 failed_requests = 3;
+    int64 time_sum_micro = 4;
+    int64 time_min_micro = 5;
+    int64 time_max_micro = 6;
+    int64 total_bytes = 7;
+    int64 status_2xx = 8;
+    int64 status_3xx = 9;
+    int64 status_4xx = 10;
+    int64 status_5xx = 11;
+    int64 busiest_interval = 12;
+    int64 busiest_count = 13;
+
+    message ServerRow {
+        int32 server_id = 1;
+        int64 count = 2;
+        int64 time_sum_micro = 3;
+    }
+    message EndpointRow {
+        int32 endpoint_id = 1;
+        int64 count = 2;
+        int64 bytes = 3;
+    }
+    repeated ServerRow   top_servers = 14;
+    repeated EndpointRow top_endpoints = 15;
+
+    // System state, for the dashboard and for checking consistency.
+    int64  records_ingested = 20;   // received by the coordinator
+    int64  records_processed = 21;  // counted and merged; equals total_requests
+    double ingest_rate = 22;
+    double process_rate = 23;
+    int32  active_streams = 24;
+    bool   complete = 25;           // stream finished and everything merged
+    int64  version = 26;            // increases on every merge
+    string strategy = 27;
+    double uptime_seconds = 28;
+    int32  k = 29;
+    int32  distinct_servers = 30;
+    int32  distinct_endpoints = 31;
+    int64  distinct_intervals = 32;
+    repeated WorkerStatus workers = 33;
+}
+
+message ResetRequest  { }
+message ResetResponse { bool ok = 1; string message = 2; }

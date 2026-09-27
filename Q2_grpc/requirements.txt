@@ -1,8 +1,0 @@
-# runtime (coordinator, workers, clients, dashboard)
-grpcio>=1.60
-protobuf>=4.25
-# regenerate the stubs from proto/loganalytics.proto (make proto)
-grpcio-tools>=1.60
-# benchmarks: CPU/memory sampling (optional) and plots
-psutil
-matplotlib

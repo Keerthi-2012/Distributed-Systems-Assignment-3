@@ -1,6 +1,0 @@
-data/
-bin/
-logs/
-__pycache__/
-.local_pids
-results/expected_*.txt
