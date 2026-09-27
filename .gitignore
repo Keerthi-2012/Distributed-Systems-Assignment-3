@@ -6,6 +6,8 @@
 rce.sh
 # course handouts
 *.pdf
+# ...but our own report is part of the submission
+!report.pdf
 General Instructions.md
 MapreduceForLocalTesting.sh
 Mapreduce_distributed.sh
@@ -42,3 +44,9 @@ Section2/results/rce_*
 
 # generated for the editor, so it can resolve the C++ headers
 compile_commands.json
+
+# LaTeX intermediates from the report build
+report_build/*.aux
+report_build/*.log
+report_build/*.out
+report_build/report.pdf
