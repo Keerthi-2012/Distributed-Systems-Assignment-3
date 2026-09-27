@@ -24,8 +24,8 @@ against a fixed, written-down specification instead of against each other.
 
 | | Correctness vs `log_seq` | Headline result |
 | - | ------------------------ | --------------- |
-| **Q1** MapReduce (C++) | **34 / 34 checks** | 10M records in **0.756 s** with 8 map tasks (4.75× speedup); shuffle **278× smaller** than the input |
-| **Q2** gRPC streaming (Python) | **76 / 76 checks** | **3.45M records/s** with 4 workers; queries answered at **p99 < 9 ms** during ingestion |
+| **Q1** MapReduce (C++) | **34 / 34 checks** | 10M records in **4.92 s** with 4 map tasks on 4 nodes (3.4× speedup); shuffle **278× smaller** than the input |
+| **Q2** gRPC streaming (Python) | **76 / 76 checks** | **2.86M records/s** with 4 workers; queries answered throughout ingestion, p99 **33 ms** under one closed-loop client |
 | **MPI** comparison (C++, reconstructed) | identical at 1, 2, 4, 8 processes | 10M records in 2.16 s at 8 processes |
 
 Full analysis, tables and plots: **[REPORT.md](REPORT.md)**. How to build and
@@ -452,11 +452,10 @@ load is skewed.
 
 ## 10. Results — Q1 (MapReduce)
 
-Measured on an RCE compute node, 8 cores, C++ `-O2`. Each configuration was run
-**3 times**; the tables show the **median**. The map tasks run as parallel
-processes on one node, which is what `scripts/bench_q1.sh` does; the Slurm script
-spreads the same stages across nodes. Raw data: `results/q1_bench.csv`, one row
-per run, each with its own `correct` column — **all 36 runs matched `log_seq`**.
+Measured on RCE across a **4-node allocation**, map tasks placed one per node
+(`srun --nodes --distribution=cyclic`), C++ `-O2`, mean of 2 runs. Raw data:
+`results/q1_bench.csv`, one row per run with its own `correct` column — **all 24
+runs matched `log_seq`**.
 
 ![Q1 plots](results/q1_plots.png)
 
@@ -464,25 +463,26 @@ per run, each with its own `correct` column — **all 36 runs matched `log_seq`*
 
 | Dataset | Records | 1 task | 2 tasks | 4 tasks | 8 tasks | speedup at 8 |
 | ------- | ------: | -----: | ------: | ------: | ------: | -----------: |
-| small   | 100,000 | 0.035 s | 0.024 s | 0.019 s | 0.021 s | 1.7× |
-| medium  | 1,000,000 | 0.302 s | 0.152 s | 0.087 s | 0.079 s | 3.8× |
-| large   | 10,000,000 | 3.534 s | 1.772 s | 0.946 s | 0.744 s | **4.8×** |
+| small   | 100,000 | 0.342 s | 0.319 s | 0.300 s | 0.609 s | 1.1× (at 4) |
+| medium  | 1,000,000 | 1.766 s | 1.106 s | 0.689 s | 0.999 s | 2.6× (at 4) |
+| large   | 10,000,000 | 16.666 s | 9.321 s | 4.918 s | 5.127 s | **3.4× (at 4)** |
 
 **Observations**
 
-- **The map phase scales almost linearly while there is enough work.** On
-  `large`, 1→2 tasks is 1.99× and 1→4 is 3.74×, close to ideal. The gain falls
-  off at 8 (4.8× rather than 8×) because the serial tail — gathering every
-  mapper's pairs, the final sort and the single reducer — does not shrink when
-  mappers are added. That is Amdahl's law with a visible serial part, and the
-  stacked plot shows exactly which part.
-- **Small inputs stop improving immediately.** `small` is *slower* at 8 tasks
-  than at 4: 100,000 records take about 7 ms to map, and process startup plus the
-  gather costs more than the parallelism saves. MapReduce is a batch tool with a
-  fixed overhead; it pays off from roughly a million records upward here.
-- **The map phase dominates** at every size: 3.29 s of the 3.53 s total on
-  `large` with 1 task (93%). Parsing the text input is the real work, which is
-  why the C++ hand-written parser matters.
+- **Four tasks is the best configuration, because the allocation has four
+  nodes.** On `large`, 1→2 is 1.79× and 1→4 is 3.39×, close to ideal. At eight
+  tasks it gets *worse* (5.127 s vs 4.918 s): two tasks now share each node, and
+  the map stage is limited by reading the input over the shared filesystem, so a
+  second task on the same node adds no bandwidth — only more partial rows for the
+  sort and combine stages to handle.
+- **The map phase dominates completely**: 16.09 s of the 16.67 s total on `large`
+  with one task, **96%**. Everything else — sort, combine, gather, reduce — is
+  under 0.6 s at every task count. The stacked plot shows this directly.
+- **Small inputs should not be distributed.** `small` gains almost nothing from 1
+  to 4 tasks (0.342 → 0.300 s) and is clearly slower at 8 (0.609 s): starting
+  processes across nodes costs more than the parallelism saves. MapReduce is a
+  batch tool with a fixed overhead; it pays off from roughly a million records
+  upward here.
 
 ### 10.2 What in-mapper combining saves
 
@@ -490,7 +490,7 @@ per run, each with its own `correct` column — **all 36 runs matched `log_seq`*
 | ------- | ----: | ---------------: | ----------------: | --------: |
 | small   | 3.9 MB | 29 KB | 93 KB | **135×** |
 | medium  | 39 MB | 162 KB | 300 KB | **246×** |
-| large   | 396 MB | 1.4 MB | 1.8 MB | **278×** |
+| large   | 396 MB | 1.43 MB | 1.73 MB | **278×** |
 
 **Observations**
 

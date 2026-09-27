@@ -127,11 +127,27 @@ for name in $DATASETS; do
             if [ -x ./bin/log_mpi ]; then
                 # mpirun, not srun: srun starts the ranks but does not wire
                 # up MPI here, and the program then fails silently.
+                #
+                # ALL RANKS ON THIS ONE NODE (--host). Spread over several nodes,
+                # Open MPI picks the wrong network interface here and the ranks
+                # never connect: it prints "connect() to 10.0.0.102:1024 failed"
+                # and then hangs for ever. Keeping the ranks local sidesteps that,
+                # and it matches how the MapReduce numbers are taken anyway.
+                #
+                # timeout as well, because a hang here used to stall the whole
+                # sweep: one stuck MPI run meant no MapReduce results at all.
                 M0=$(now)
-                mpirun --oversubscribe -np "$TASKS" ./bin/log_mpi "$INPUT" \
+                timeout 600 mpirun --oversubscribe -np "$TASKS" \
+                    --host "$(hostname):$TASKS" \
+                    ./bin/log_mpi "$INPUT" \
                     > "$WORK/mpi_out.txt" 2> "$WORK/mpi_err.txt"
+                MPI_RC=$?
                 M1=$(now)
-                if diff -q "$ROOT/logs/expected_$name.txt" "$WORK/mpi_out.txt" > /dev/null; then
+                if [ "$MPI_RC" -eq 124 ]; then
+                    MPI_CORRECT=timeout
+                    echo "  !! MPI timed out: $name procs=$TASKS run=$run"
+                    head -3 "$WORK/mpi_err.txt" 2>/dev/null | sed 's/^/     /'
+                elif diff -q "$ROOT/logs/expected_$name.txt" "$WORK/mpi_out.txt" > /dev/null; then
                     MPI_CORRECT=yes
                 else
                     MPI_CORRECT=no

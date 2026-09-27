@@ -104,47 +104,54 @@ records to a few thousand pairs.
 
 ### 2.2 Scaling
 
-10M records (`large.in`, 396 MB), median of 3 runs, all checked against
-`log_seq`:
+10M records (`large.in`, 396 MB), map tasks placed **one per node** across a
+4-node allocation, mean of 2 runs, every run checked against `log_seq` (24 of 24
+matched):
 
 | Map tasks | Total | Map | Sort | Combine | Gather+sort | Reduce | Speedup |
 | --------: | ----: | --: | ---: | ------: | ----------: | -----: | ------: |
-| 1 | 3.534 s | 3.286 | 0.090 | 0.040 | 0.090 | 0.028 | 1.00× |
-| 2 | 1.772 s | 1.585 | 0.046 | 0.021 | 0.093 | 0.028 | 1.99× |
-| 4 | 0.946 s | 0.784 | 0.024 | 0.012 | 0.096 | 0.029 | 3.74× |
-| 8 | 0.744 s | 0.556 | 0.030 | 0.011 | 0.116 | 0.029 | **4.75×** |
+| 1 | 16.666 s | 16.086 | 0.212 | 0.149 | 0.148 | 0.071 | 1.00× |
+| 2 | 9.321 s | 8.811 | 0.156 | 0.125 | 0.158 | 0.071 | 1.79× |
+| 4 | 4.918 s | 4.435 | 0.120 | 0.107 | 0.182 | 0.074 | **3.39×** |
+| 8 | 5.127 s | 4.430 | 0.217 | 0.204 | 0.197 | 0.078 | 3.25× |
 
 Smaller inputs:
 
 | Dataset | Records | 1 task | 2 | 4 | 8 |
 | ------- | ------: | -----: | -: | -: | -: |
-| small | 100,000 | 0.035 s | 0.024 s | 0.019 s | 0.021 s |
-| medium | 1,000,000 | 0.302 s | 0.152 s | 0.087 s | 0.079 s |
-| large | 10,000,000 | 3.534 s | 1.772 s | 0.946 s | 0.744 s |
+| small | 100,000 | 0.342 s | 0.319 s | 0.300 s | 0.609 s |
+| medium | 1,000,000 | 1.766 s | 1.106 s | 0.689 s | 0.999 s |
+| large | 10,000,000 | 16.666 s | 9.321 s | 4.918 s | 5.127 s |
 
 **Observations**
 
-- **The map phase dominates and scales almost linearly** while there is work to
-  spread: 1→2 is 1.99×, 1→4 is 3.74×. Map is 93% of the single-task run
-  (3.29 s of 3.53 s), and it is text parsing, which is why the hand-written
-  parser in `common/analytics.cpp` matters.
-- **The serial tail sets the ceiling.** Gather+sort and reduce do not shrink
-  when mappers are added — they grow slightly, from 0.090 s to 0.116 s, because
-  more mappers emit more partial rows for the same keys. At 8 tasks that tail is
-  0.145 s of a 0.744 s run, which is why the speedup is 4.75× and not 8×. This
-  is Amdahl's law with a visible serial part.
-- **Small inputs stop improving immediately.** `small.in` is *slower* at 8 tasks
-  (0.021 s) than at 4 (0.019 s): 100,000 records take ~7 ms to map, and process
-  startup plus the gather costs more than the parallelism saves. MapReduce is a
-  batch tool with a fixed overhead; below roughly a million records it is not
-  worth distributing.
+- **The map phase is almost the whole run and it is what scales.** On `large` at
+  one task, map is **16.09 s of 16.67 s — 96%**. Sort, combine, gather and
+  reduce together come to under 0.6 s at every task count. Speedup tracks the
+  map stage closely: 1→2 is 1.79×, 1→4 is 3.39×.
+- **Four tasks is the sweet spot, because there are four nodes.** At eight tasks
+  the map stage stops improving entirely (4.435 s → 4.430 s): two tasks now share
+  each node, and since the stage is dominated by reading the input over the
+  shared filesystem, a second task on the same node adds no bandwidth. The extra
+  tasks only make the sort and combine stages larger (0.120 → 0.217 s), so the
+  total gets *worse*: 4.918 s → 5.127 s.
+- **The serial tail is small but real.** Gather+sort and reduce never shrink when
+  mappers are added — they grow, 0.219 s → 0.275 s, because more mappers emit
+  more partial rows for the same keys. That is Amdahl's law with a visible serial
+  part, though here it is not what limits us; the filesystem is.
+- **Small inputs should not be distributed at all.** `small.in` is barely faster
+  at 4 tasks than at 1 (0.300 s vs 0.342 s) and clearly *slower* at 8 (0.609 s).
+  100,000 records take a fraction of a second to map, and process startup across
+  nodes costs more than the parallelism saves. Below roughly a million records
+  the overhead wins.
 - **Time grows linearly with input size** at fixed parallelism: 100k → 1M → 10M
-  gives 0.035 → 0.302 → 3.534 s at one task, within 5% of 10× per step.
+  gives 0.342 → 1.766 → 16.666 s at one task, close to 10× per step once the
+  fixed startup cost is discounted.
 
 ### 2.3 What in-mapper combining saves
 
-| Dataset | Input | Shuffle (1 task) | Shuffle (8 tasks) | Reduction |
-| ------- | ----: | ---------------: | ----------------: | --------: |
+| Dataset | Input | Shuffle (1 task) | Shuffle (8 tasks) | Reduction (1 task) |
+| ------- | ----: | ---------------: | ----------------: | -----------------: |
 | small | 3.9 MB | 29 KB | 93 KB | **135×** |
 | medium | 39 MB | 162 KB | 300 KB | **246×** |
 | large | 396 MB | 1.43 MB | 1.73 MB | **278×** |
@@ -152,10 +159,10 @@ Smaller inputs:
 - The shuffle is **278× smaller than the input** on 10M records, and the ratio
   *improves* with size, because intermediate data is bounded by the key space
   (256 servers, ~2,000 endpoints, ~57,000 intervals) while the input grows with
-  N.
-- More mappers means slightly more shuffle, since each mapper emits its own
-  partial row for every key it sees. Going 1→8 adds 21% on `large`, which is
-  mild here because the key space is small next to 10M records.
+  N. At one task it is 1.43 MB against a 396 MB input.
+- More mappers means more shuffle, since each mapper emits its own partial row
+  for every key it sees: 1→8 tasks takes `large` from 1.43 MB to
+  1.73 MB (22% more). That is still tiny next to the input.
 - This is why the single reducer is not a bottleneck: it merges megabytes, not
   hundreds of megabytes.
 
@@ -196,137 +203,118 @@ them:
 
 Measured on RCE with **one process per node**: coordinator on one node, the
 stream client on another, each worker on its own. 1M records (`medium.in`),
-median of 3 runs, every run checked against `log_seq` — **no run in this sweep
-produced a wrong answer**. The client uses `--preload`, so the timings measure
-streaming and analytics, not file parsing.
+mean of the runs in `results/q2_bench.csv`, every run checked against `log_seq`
+— **all 35 runs produced the correct answer**. The client uses `--preload`, so
+the timings measure streaming and analytics, not file parsing.
 
 ![Q2 plots](results/q2_plots.png)
 
 #### Number of workers (round robin, batch 1000)
 
-| Workers | Throughput (median) | Range | Speedup |
-| ------: | ------------------: | ----- | ------: |
-| 1 | 964k rec/s | 962k – 976k | 1.00× |
-| 2 | 1.88M rec/s | 1.86M – 1.88M | 1.95× |
-| 4 | 3.45M rec/s | 2.69M – 3.56M | 3.58× |
+| Workers | Throughput | Speedup |
+| ------: | ---------: | ------: |
+| 1 | 834k rec/s | 1.00× |
+| 2 | 1.53M rec/s | 1.84× |
+| 4 | 2.86M rec/s | **3.43×** |
 
-- **Scaling is nearly linear to 4 workers.** Counting is the dominant cost and
-  it parallelises perfectly, because workers share nothing.
-- A single worker sustains **964k records/s**, which is far more than a
-  per-record Python loop would manage. The reason is the columnar batch format:
-  protobuf decodes seven packed arrays in C, and the worker's loop walks them
-  with local variable lookups. Measured in isolation, the counting loop alone
-  runs at **2.5M records/s in one Python process**.
-- The widening range at 4 workers (2.69M–3.56M) is the first sign of the
-  coordinator becoming the limit: every record passes through its single
-  interpreter, and it competes with other jobs on a shared cluster.
+- **Scaling is close to linear to 4 workers.** Counting is the dominant cost and
+  it parallelises well, because workers share nothing: each holds its own
+  `Stats` and never talks to another worker.
+- A single worker sustains **834k records/s**, far more than a per-record Python
+  loop would manage. The reason is the columnar batch format: protobuf decodes
+  seven packed arrays in C, and the worker's loop walks them with local variable
+  lookups.
+- The gap from 3.43× to a perfect 4× is the coordinator: every record passes
+  through its single Python interpreter, which is the one part of the system that
+  cannot be parallelised by adding workers.
 
 #### Message granularity (4 workers, round robin)
 
 | Records per message | Messages for 1M records | Throughput | vs batch 1 |
 | ------------------: | ----------------------: | ---------: | ---------: |
-| 1 | 1,000,000 | 10.5k rec/s | 1× |
-| 10 | 100,000 | 102k rec/s | 9.7× |
-| 100 | 10,000 | 885k rec/s | 84× |
-| 1,000 | 1,000 | 3.45M rec/s | **328×** |
-| 10,000 | 100 | 3.66M rec/s | 348× |
+| 1 | 1,000,000 | 10.4k rec/s | 1× |
+| 10 | 100,000 | 101k rec/s | 9.8× |
+| 100 | 10,000 | 825k rec/s | 80× |
+| 1,000 | 1,000 | 2.86M rec/s | **276×** |
+| 10,000 | 100 | 3.09M rec/s | 298× |
 
-- **Granularity is by far the largest single factor**, worth **328×** between
-  one record per message and a thousand. Up to batch 100 throughput grows almost
+- **Granularity is by far the largest single factor**, worth **276×** between one
+  record per message and a thousand. Up to batch 100 throughput grows almost
   exactly 10× per 10× batch size, which is the signature of a cost that is **per
   message, not per record**: gRPC framing, a Python-level handler iteration, a
   queue hand-off and a re-send to the worker are all paid once per message
   whether it carries 1 record or 1,000.
-- The curve **flattens after 1,000** (only 6% more at 10,000), where per-message
+- The curve **flattens after 1,000** (only 8% more at 10,000), where per-message
   overhead has been amortised away and the per-record work dominates.
 - Batch 1,000 is the right default: it sits at the start of the plateau, and at
   1M rec/s a batch spends only ~1 ms waiting to fill, so freshness is unaffected.
 
 #### Record distribution strategy (4 workers, batch 1000)
 
-| Strategy | Throughput | Range | vs round robin |
-| -------- | ---------: | ----- | -------------: |
-| `round_robin` | 3.45M rec/s | 2.69M – 3.56M | 1.00× |
-| `least_loaded` | 2.36M rec/s | 2.35M – 2.41M | 0.68× |
-| `hash_server` | 441k rec/s | 441k – 445k | **0.13×** |
+| Strategy | Throughput | vs round robin |
+| -------- | ---------: | -------------: |
+| `round_robin` | 2.86M rec/s | 1.00× |
+| `least_loaded` | 1.87M rec/s | 0.65× |
+| `hash_server` | 219k rec/s | **0.08×** |
 
-- **`hash_server` is 7.8× slower**, and the ranges do not overlap. It is the
-  only strategy that looks at every *record* rather than every *batch*: the
-  coordinator takes each batch apart, decides a destination per record, and
-  re-encodes W smaller batches — O(records) work in the one interpreter every
-  record already has to pass through. Key partitioning moves the bottleneck into
-  the router.
-- **`least_loaded` is 32% slower than round robin**, which is the opposite of
-  its intent. It calls `qsize()` on every worker queue for every batch, and on
-  this cluster the workers are near-identical, so it pays the polling cost
-  without ever finding a meaningfully shorter queue. It would earn its keep only
-  with heterogeneous or contended workers.
-- **`round_robin` is the right default here**: O(1) per batch, perfectly even
-  for equal-sized batches, and correct for Q7 because every analytic is
-  mergeable, so no key affinity is needed.
+- **`hash_server` is 13× slower.** It is the only strategy that looks at every
+  *record* rather than every *batch*: the coordinator takes each batch apart,
+  decides a destination per record, and re-encodes W smaller batches — O(records)
+  work in the one interpreter every record already has to pass through. Key
+  partitioning moves the bottleneck into the router.
+- **`least_loaded` is 35% slower than round robin**, the opposite of its intent.
+  It calls `qsize()` on every worker queue for every batch, and on this cluster
+  the workers are near-identical, so it pays the polling cost without ever
+  finding a meaningfully shorter queue. It would earn its keep only with
+  heterogeneous or contended workers.
+- **`round_robin` is the right default here**: O(1) per batch, perfectly even for
+  equal-sized batches, and correct for Q7 because every analytic is mergeable, so
+  no key affinity is needed.
 
 #### Concurrent queries during ingestion
 
 Each query client is a separate thread issuing `GetAnalytics` in a **closed
 loop** — no pause between queries, which is the harshest possible load. Every
-query asks all the workers before answering.
+query asks all the workers for their running totals and adds them up.
 
-> **When these numbers were taken.** The table below was measured on the earlier
-> version of the coordinator, the one that pulled numbered deltas and shared one
-> pull round between simultaneous queries. The current code asks each worker for
-> its full running totals instead, which is simpler but sends more per query, so
-> the query costs here should be treated as a **lower bound** until this section
-> is re-measured. The correctness results (§6) were re-run on the current code.
-
-All rows below are `small.in`, 4 workers, batch 1000, **including the baseline**,
-so the percentages compare like with like. (`small.in` rather than `medium.in`
-because the heavier query loads could not finish a 1M-record stream at all —
-see below.)
+All rows are `medium.in` (1M records), 4 workers, batch 1000, round robin.
 
 | Query clients | Ingest throughput | vs no queries | Queries/s | p50 | p95 | p99 |
 | ------------- | ----------------: | ------------: | --------: | --: | --: | --: |
-| none | 3.22M rec/s | — | — | — | — | — |
-| 1 fresh | 2.07M – 2.23M rec/s | **−33%** | 634–644 | 1.4 ms | 1.8–2.1 ms | 4.6–5.3 ms |
-| 4 fresh | 1.44M rec/s | **−55%** | 1,328 | 2.7 ms | 4.1 ms | 8.8 ms |
-| 16 fresh | **did not complete** | — | — | — | — | — |
-| 16 stale | **not measured** | — | — | — | — | — |
+| none | 2.86M rec/s | — | — | — | — | — |
+| 1 | 2.21M rec/s | **−23%** | 53 | 19.8 ms | 31.0 ms | 32.8 ms |
+| 4 | 696k rec/s | **−76%** | 150 | 29.6 ms | 37.4 ms | 41.2 ms |
+| 16 | 168k rec/s | **−94%** | 155 | 110.8 ms | 159.8 ms | 190.2 ms |
 
 **Observations**
 
-- **Queries stay fast while ingestion continues.** Even with 4 clients querying
-  without pause, p99 latency is **8.8 ms** and the system answers 1,328
-  queries/s, all while counting over a million records a second. Every answer is
-  consistent (§6).
-- **They are not free.** One closed-loop client costs a third of ingest
-  throughput, four cost more than half. The reason is visible in the design: a fresh query forces a
-  pull round from every worker, and both the pull and the merge happen in the
-  coordinator's single Python interpreter, competing with routing for the GIL.
-- **Query throughput scales better than it costs**: 1 → 4 clients multiplies
-  queries/s by 2.1 while cutting ingestion by only a further 22 points. Four
-  clients asking without pause therefore buy twice the answers for well under
-  twice the cost.
-- **At 16 clients the system stops making progress.** Three attempts, each with
-  a shorter time cap and the last on a 100k-record dataset, all failed to finish
-  a stream within minutes. This is not a crash: answers remain correct and the
-  system recovers once the load stops. It is the single-threaded coordinator
-  being saturated — 16 closed-loop clients issue pull rounds and snapshot builds
-  faster than the interpreter can also route records, so ingestion is starved
-  almost completely.
-
-  **This is the clearest limitation found in the whole system**, and it is a
-  direct consequence of two choices: one coordinator through which every record
-  passes, and Python, where that coordinator cannot use more than one core.
-  Mitigations that follow from the measurement, none implemented: serve stale
-  reads by default (they need no pull round at all), impose a minimum interval
-  between syncs so query load cannot multiply them, or push snapshots with
-  `WatchAnalytics`, which costs one merge per refresh however many viewers are
-  attached. The dashboard already uses `WatchAnalytics` for exactly this reason.
-
-The 16-client figures are therefore **absent rather than estimated**. The trend
-from 0 → 1 → 4 clients is measured and consistent; extrapolating it to 16 would
-be inventing data.
-
----
+- **16 concurrent clients now complete.** In the previous version of this system
+  this row could not be filled in at all: three attempts, each with a shorter
+  time cap and the last on a 100k-record dataset, all failed to finish a stream.
+  Replacing the epoch-numbered delta protocol with plain running totals removed
+  the coordination that was saturating the coordinator, and the case now runs to
+  completion on a full 1M-record stream, correctly.
+- **Queries are answered throughout, and every answer is correct** (§6) — all 35
+  runs in this sweep matched `log_seq`, including every query-load row.
+- **Queries are expensive, and increasingly so.** One closed-loop client costs
+  23% of ingest throughput; four cost 76%; sixteen cost 94%. Each query now makes
+  the coordinator call all four workers and add up their full state, and that
+  happens in the same single Python interpreter every record must pass through.
+- **Query throughput saturates while its cost keeps rising.** Going 4 → 16
+  clients raises answers/s only from 150 to 155 — a 3% gain — while ingestion
+  falls a further 18 points and p99 latency climbs from 41 ms to 190 ms. Beyond
+  about 4 concurrent closed-loop clients the coordinator is the bottleneck and
+  extra clients only queue behind each other.
+- **This is the clearest limit of the design.** Every record and every query
+  passes through one coordinator process, and Python's GIL means routing and
+  query-answering cannot truly overlap. Sharding the coordinator, or answering
+  queries from a periodically-refreshed snapshot instead of polling workers on
+  every request, is the obvious next step; the trade would be freshness against
+  throughput.
+- **Latency is higher than the batch numbers above might suggest** because each
+  query does real work: four gRPC round trips plus a merge of three maps. A
+  p99 of 33 ms under a closed-loop client, while ingesting 2.2M records/s, is
+  still comfortably interactive for a dashboard refreshing once a second.
 
 ## 4. MapReduce vs MPI
 
@@ -341,78 +329,98 @@ splits it across mappers, and combines with `MPI_Reduce` (`MPI_SUM` for counts
 and sums, `MPI_MIN`/`MPI_MAX` for the extremes). It reproduces `log_seq`
 byte-for-byte at 1, 2, 4 and 8 processes.
 
-Both systems were measured on **one RCE compute node**, ranks and map tasks
-sharing that machine, median of 3 runs, every run diffed against `log_seq`.
+**How these were measured.** MapReduce runs its map tasks **one per node**
+across a 4-node allocation (`srun --nodes --distribution=cyclic`). MPI runs
+**all ranks on a single node**, because Open MPI cannot launch across nodes on
+RCE: pointing it at the InfiniBand IPoIB interface fails with
+`connect() to 10.0.0.x:1024 failed` and then hangs, and forcing the Ethernet
+subnet instead fails with a missing-topology error for the remote node. Each
+compute node has **2 cores**. Every run is diffed against `log_seq`; all 24
+MapReduce runs and all 24 MPI runs matched.
+
+> **Read the 4- and 8-process rows with care.** They are not like-for-like:
+> MapReduce has 4 machines there, MPI has one 2-core machine. Only the 1- and
+> 2-process rows compare the two paradigms on equal hardware.
 
 ![MapReduce vs MPI](results/q1_vs_mpi.png)
 
 ### 4.1 Wall-clock time
 
+Mean of 2 runs, seconds.
+
 | Dataset | Procs | MPI | MapReduce | MapReduce / MPI |
 | ------- | ----: | --: | --------: | --------------: |
-| small (100k) | 1 | 0.223 s | 0.035 s | 0.15× |
-| | 2 | 0.194 s | 0.024 s | 0.12× |
-| | 4 | 0.194 s | 0.019 s | 0.10× |
-| | 8 | 0.211 s | 0.021 s | 0.10× |
-| medium (1M) | 1 | 0.849 s | 0.306 s | 0.36× |
-| | 2 | 0.557 s | 0.155 s | 0.28× |
-| | 4 | 0.402 s | 0.088 s | 0.22× |
-| | 8 | 0.393 s | 0.080 s | 0.20× |
-| large (10M) | 1 | 7.772 s | 3.534 s | 0.45× |
-| | 2 | 4.102 s | 1.791 s | 0.44× |
-| | 4 | 2.202 s | 0.965 s | 0.44× |
-| | 8 | 2.164 s | 0.756 s | 0.35× |
+| small (100k) | 1 | 0.189 | 0.342 | 1.81× |
+| | 2 | 0.277 | 0.319 | 1.15× |
+| | 4 | 0.338 | 0.300 | 0.89× |
+| | 8 | 0.498 | 0.609 | 1.22× |
+| medium (1M) | 1 | 0.870 | 1.766 | 2.03× |
+| | 2 | 0.946 | 1.106 | 1.17× |
+| | 4 | 1.024 | 0.689 | 0.67× |
+| | 8 | 1.150 | 0.999 | 0.87× |
+| large (10M) | 1 | 7.708 | 16.666 | 2.16× |
+| | 2 | 7.802 | 9.321 | 1.19× |
+| | 4 | 7.731 | 4.918 | 0.64× |
+| | 8 | 7.931 | 5.127 | 0.65× |
 
-**The MapReduce pipeline is 2–10× faster than the MPI program at every size.**
-That is the opposite of what the paradigms would suggest — MPI has no shuffle,
-no sort, no text intermediate form and no process-per-stage — so the result
-needs explaining rather than reporting.
+**On equal hardware MPI wins.** At one process it is **2.2× faster** than the
+MapReduce pipeline on `large`, and still ahead at two. That is what the
+paradigms predict: MPI has no shuffle, no sort, no text intermediate form and no
+process per stage.
 
-### 4.2 Why: it is the program structure, not the paradigm
+**MapReduce only overtakes it by using more machines**, and the crossover is
+exactly where the comparison stops being fair — at 4 tasks, where MapReduce has
+four nodes and MPI still has one.
 
-`log_mpi` inherits HW2's structure, because it reuses HW2's `Stats`: read every
-record into a `vector<Record>`, scan it to find the id ranges, size dense
-arrays, then count in a second pass. Our mapper instead counts in a **single
-streaming pass** into **sparse maps**, and never holds a record after counting
-it.
-
-Measured on `large.in`, one process, no MPI involved at all:
-
-| Program | Structure | Time | Peak memory |
-| ------- | --------- | ---: | ----------: |
-| `log_seq` (HW2's own) | two passes, all records in a vector, dense arrays | 5.79 s | **395 MB** |
-| `mapper \| reducer` | one pass, sparse maps | 3.72 s | **11.5 MB** |
-
-So HW2's structure alone costs **~2.1 s and 34× the memory** on 10M records,
-before MPI enters the picture. Add `mpirun` startup — a flat ~0.19 s, visible
-as the floor in the `small` rows, where MPI cannot get below 0.194 s no matter
-how many processes — and the MPI program's disadvantage is fully accounted for.
-
-**The honest conclusion is therefore about implementations, not paradigms.** A
-single-pass MPI program with sparse state would very likely beat this MapReduce
-pipeline, because it would do the same counting work and then one `MPI_Reduce`,
-with no sort, no text encoding and no intermediate files. What the measurement
-shows is that *how the state is represented* mattered more here than *which
-distribution framework* was used.
-
-### 4.3 Scaling
+### 4.2 Scaling, and why MPI's line is flat
 
 | Procs | MPI (large) | speedup | MapReduce (large) | speedup |
 | ----: | ----------: | ------: | ----------------: | ------: |
-| 1 | 7.772 s | 1.00× | 3.534 s | 1.00× |
-| 2 | 4.102 s | 1.89× | 1.791 s | 1.97× |
-| 4 | 2.202 s | 3.53× | 0.965 s | 3.66× |
-| 8 | 2.164 s | 3.59× | 0.756 s | 4.68× |
+| 1 | 7.708 s | 1.00× | 16.666 s | 1.00× |
+| 2 | 7.802 s | 0.99× | 9.321 s | 1.79× |
+| 4 | 7.731 s | 1.00× | 4.918 s | 3.39× |
+| 8 | 7.931 s | 0.97× | 5.127 s | 3.25× |
 
-- **Both scale well to 4 and stall at 8**, on a node whose cores are shared with
-  other jobs; the two curves are close, so the parallel decomposition is
-  comparable in both.
-- **MPI stalls harder** (3.53× → 3.59×) than MapReduce (3.66× → 4.68×). At 8
-  ranks the MPI program's memory traffic — eight ranks each holding their share
-  of 10M records as structs — saturates the node, while eight mappers holding
-  only sparse counters do not.
-- On `small`, **MPI never improves at all** (0.223 → 0.194 → 0.194 → 0.211 s):
-  the entire run is `mpirun` startup plus 0.03 s of work.
+**MPI does not speed up at all** — not even from 1 to 2 processes, where it has
+two real cores to use. That rules out a CPU limit and points at the filesystem:
+every rank reads its byte range of the same 415 MB file from the shared home
+directory, over that one node's single network link, so adding ranks adds no
+bandwidth.
+
+The per-stage MapReduce numbers say the same thing from the other side. On
+`large` with one task, the map stage is **16.09 s of the 16.67 s total** — 96%
+of the run is reading and parsing the input; sort, combine and reduce together
+account for under half a second. MapReduce scales because its map tasks sit on
+*different* nodes, so four tasks pull through four separate links. Its 3.39×
+at four tasks is close to the 4× that implies, and the fall-back at eight tasks
+(3.25×) is two tasks per node competing for one link again.
+
+**So this measurement is dominated by the environment, not by the paradigms.**
+On one machine MPI is the faster design here; MapReduce's advantage at scale
+comes from spreading I/O across machines, which is exactly the thing MPI was
+prevented from doing on this cluster. A fair multi-node MPI comparison would
+need Open MPI to launch across nodes, which we could not make work on RCE.
+
+### 4.3 A separate, structural finding
+
+Independently of the distribution framework, the two programs represent their
+state differently, and that is worth recording because it is the one comparison
+free of the launcher problem.
+
+`log_mpi` inherits HW2's structure, because it reuses HW2's `Stats`: read every
+record into a `vector<Record>`, scan it to find the id ranges, size dense
+arrays, then count in a second pass. Our mapper counts in a **single streaming
+pass** into **sparse maps**, and never holds a record after counting it.
+Measured on `large.in`, one process, no MPI involved at all:
+
+| Program | Structure | Peak memory |
+| ------- | --------- | ----------: |
+| `log_seq` (HW2's own) | two passes, all records in a vector, dense arrays | **395 MB** |
+| `mapper \| reducer` | one pass, sparse maps | **11.5 MB** |
+
+**34× less memory for the same answer.** That difference is a property of how
+the state is represented, not of MPI or MapReduce, and it would carry over to an
+MPI program written the same way.
 
 ### 4.4 Qualitative comparison
 
@@ -440,9 +448,9 @@ share one node, Q2 places every process on its own node.
 | | Q1 — MapReduce | Q2 — gRPC streaming |
 | - | -------------- | ------------------- |
 | **When the answer exists** | only at the end of the job | continuously, while data arrives |
-| **1M records, 4 workers/tasks** | 0.088 s | 0.29 s (3.45M rec/s) |
-| **10M records** | 0.756 s at 8 tasks | not measured at 10M |
-| **Scaling 1 → 4** | 3.66× | 3.58× |
+| **1M records, 4 workers/tasks** | 0.689 s | 0.35 s (2.86M rec/s) |
+| **10M records** | 4.92 s at 4 tasks | not measured at 10M |
+| **Scaling 1 → 4** | 3.39× | 3.43× |
 | **What limits it** | the serial tail: gather, final sort, single reducer | the single coordinator every record passes through |
 | **Data movement** | 1.4 MB of text through sort and the filesystem | 1M records through gRPC, in 1,000 messages |
 | **Memory** | 11.5 MB per mapper | ~50 MB per worker, constant in N |
@@ -453,17 +461,20 @@ share one node, Q2 places every process on its own node.
 
 **Observations**
 
-- **Batch wins on raw throughput for a fixed dataset.** MapReduce processes 1M
-  records in 0.088 s against the streaming system's 0.29 s, and it does so with
-  a fraction of the machinery: read, count, merge, print. Nothing is serialised
-  into messages, nothing is routed, nothing is merged repeatedly.
+- **Streaming is the faster of the two on a fixed dataset here.** On 1M records
+  with four workers or tasks, Q2 finishes in 0.29 s against MapReduce's 0.689 s.
+  That is not a paradigm result: MapReduce spends almost all of its time reading
+  the input from the shared filesystem (96% of the run is the map stage), while
+  the streaming client has the records in memory before the timer starts. The two
+  measure different things, and the comparison is included to be explicit about
+  that rather than to rank them.
 - **Streaming wins on when the answer is available.** Q1's analytics do not
   exist until the job ends; Q2's are queryable throughout, which is the whole
   point of the paradigm and cannot be compared on a throughput axis at all.
 - **The costs are in different places.** Q1 pays a fixed startup and a serial
   tail, so it is wasteful on small inputs (100k records is slower at 8 tasks
   than at 4) and excellent on large ones. Q2 pays per message, which is why
-  granularity is worth 328× and why the batch size, not the worker count, is
+  granularity is worth 276× and why the batch size, not the worker count, is
   the first thing to tune.
 - **Both are limited by a single serial component**: Q1's one reducer, Q2's one
   coordinator. Q1's is cheap because the mappers reduced the data 278× first;
@@ -603,14 +614,18 @@ that sits exactly on a rounding tie in `edge_odd.in`.
 
 **What each paradigm is good at, measured:**
 
-- **Q1 (MapReduce)** processes 10M records in **0.756 s with 8 map tasks**,
-  scaling 4.75×, and shrinks intermediate data **278× below the input** through
-  in-mapper combining. It is wasteful below about a million records, where fixed
-  startup dominates, and its ceiling is the serial tail — gather, final sort,
-  one reducer — which does not shrink as mappers are added.
-- **Q2 (gRPC streaming)** sustains **3.45M records/s with 4 workers**, scaling
-  3.58×, and answers queries at **p99 under 9 ms while still ingesting**. Its
-  dominant tuning knob is message granularity, worth **328×** between one record
+- **Q1 (MapReduce)** processes 10M records in **4.92 s with 4 map tasks on 4
+  nodes**, scaling 3.39×, and shrinks intermediate data **278× below the input**
+  through in-mapper combining. It is wasteful below about a million records,
+  where fixed startup dominates. Its ceiling here is **reading the input**: the
+  map stage is 96% of the run, so throughput is bounded by shared-filesystem
+  bandwidth, and adding a fifth-through-eighth task on already-busy nodes makes
+  it slower rather than faster.
+- **Q2 (gRPC streaming)** sustains **2.86M records/s with 4 workers**, scaling
+  3.43×, and answers queries throughout ingestion — p99 **33 ms** under one
+  closed-loop client, and 16 concurrent clients now complete a full 1M-record
+  stream, which the earlier delta-based design could not do at all. Its
+  dominant tuning knob is message granularity, worth **276×** between one record
   per message and a thousand; its ceiling is the single coordinator, which
   saturates under heavy query load.
 
