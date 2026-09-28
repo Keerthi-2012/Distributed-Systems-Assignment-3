@@ -286,7 +286,8 @@ def plot_comparison():
         return
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    fig.suptitle("Q1 MapReduce vs MPI - same analytics, same data, same machine",
+    fig.suptitle("Q1 MapReduce vs MPI - same analytics and data, equal core counts\n"
+                 "(MapReduce: 1 task per node on 4 nodes; MPI: all ranks on 1 node)",
                  fontsize=13, fontweight="bold")
 
     datasets = sorted({r["dataset"] for r in mpi},

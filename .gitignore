@@ -3,6 +3,9 @@
 .env.*
 
 # ---- personal notes and helpers (local only, not part of the submission) --
+# EXPLAIN.md: my own notes for explaining each question - never pushed
+EXPLAIN.md
+**/EXPLAIN.md
 rce.sh
 # course handouts
 *.pdf
@@ -50,3 +53,5 @@ report_build/*.aux
 report_build/*.log
 report_build/*.out
 report_build/report.pdf
+report_build/*.toc
+report_build/*.png

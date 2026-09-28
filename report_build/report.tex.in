@@ -4,6 +4,9 @@
 \usepackage[dvipsnames]{xcolor}
 \usepackage[colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
 \usepackage{titlesec}
+% Figures come straight from the results folder, so the report always shows the
+% plots that match the committed CSVs.
+\graphicspath{{../Section2/results/}}
 \titleformat{\section}{\large\bfseries\color{NavyBlue}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
 \setlength{\parskip}{0.45em}\setlength{\parindent}{0pt}
@@ -13,7 +16,16 @@
 \author{}\date{}
 
 \begin{document}
-\maketitle\vspace{-1.8cm}
+\maketitle\vspace{-1.6cm}
+
+\begin{center}\small
+Source code: \url{https://github.com/Keerthi-2012/Distributed-Systems-Assignment-3}
+\end{center}
+
+\vspace{0.4em}
+{\small\tableofcontents}
+\vspace{0.6em}
+\hrule
 
 \section{Introduction}
 
@@ -257,6 +269,14 @@ barely faster than the single-task run and the eight-task run is clearly slower:
 startup across nodes exceeds the work being parallelised. MapReduce carries a fixed
 overhead that is only amortised from roughly a million records upward.
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{q1_plots.png}
+\caption{Batch analytics. Time against map-task count for each dataset; the stacked
+breakdown showing the map stage dominating; speedup against the linear ideal; and the
+growth of intermediate data with task count.}
+\end{figure}
+
 \subsection{Comparison with MPI}
 The same analytics were implemented with MPI, splitting the input by byte range and
 combining with \texttt{MPI\_Reduce} (\texttt{MPI\_SUM} for counts and sums,
@@ -318,6 +338,15 @@ requiring 395\,MB per task and a prior pass over the whole input cannot be split
 mappers that each see a fraction of the data. A single-pass MPI implementation using
 sparse state would combine both advantages and would be expected to outperform
 everything measured here.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{q1_vs_mpi.png}
+\caption{MapReduce against MPI on identical work and equal core counts. Left: wall-clock
+time against parallelism. Centre: the ratio, consistently above 1.0, meaning MPI is
+faster throughout. Right: both scale almost identically, so the difference lies in the
+constant factor rather than in the decomposition.}
+\end{figure}
 
 \section{Real-Time Log Analytics with gRPC}
 
@@ -477,6 +506,14 @@ closed-loop clients the coordinator is saturated and further clients merely queu
 directly from the diagnosis: partition the coordinator so that routing and query service
 are not serialised through one process, or answer queries from a snapshot refreshed on a
 timer, trading a bounded amount of staleness for throughput.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{q2_plots.png}
+\caption{Streaming analytics. Throughput against worker count; the effect of message
+granularity, which spans more than two orders of magnitude; the comparison of routing
+strategies; and the cost of concurrent queries during ingestion.}
+\end{figure}
 
 \section{Food Ordering System with gRPC}
 
