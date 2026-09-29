@@ -12,9 +12,13 @@ table is the mapping, and it is the first thing to read.
 
 | This repository | In `hw3-final.pdf` | Problem | Language |
 | --------------- | ------------------ | ------- | -------- |
-| **[Q1/](Q1/)** | Section 1, **Q1** | Distributed Matrix Multiplication using MapReduce (Row-Row method) | Python |
-| **[Section2/](Section2/)** | Section 2, **Q1 and Q2** | The real-world analytics problem, solved twice — as MapReduce and as gRPC | C++ and Python |
-| **[Q3/](Q3/)** | Section 3, **Problem 2** | Food Ordering System using gRPC | Python |
+| **[Section1_Q1/](Section1_Q1/)** | Section 1, **Q1** | Distributed Matrix Multiplication using MapReduce (Row-Row method) | Python |
+| **[Section2_Q1/](Section2_Q1/)** | Section 2, **Q1** | Batch analytics with MapReduce | C++ |
+| **[Section2_Q2/](Section2_Q2/)** | Section 2, **Q2** | The same analytics as a real-time gRPC stream | Python |
+| **[Section3_Q2/](Section3_Q2/)** | Section 3, **Problem 2** | Food Ordering System using gRPC | Python |
+
+Each folder is named for its place in the assignment, so the name alone says
+which question it answers.
 
 Two points about that table:
 
@@ -37,22 +41,35 @@ questions not present here were not assigned to this team.
 
 ```
 .
-├── Q1/                     Section 1 Q1 — matrix multiplication
-├── Section2/
-│   ├── Q1_mapreduce/       Section 2 Q1 — batch analytics, C++ MapReduce
-│   ├── Q2_grpc/            Section 2 Q2 — streaming analytics, Python gRPC
-│   └── data/               the shared datasets (generated, not in git)
-├── Q3/                     Section 3 Problem 2 — food ordering, gRPC
-└── report.pdf              the combined report covering all three
+├── Section1_Q1/            Section 1 Q1 — matrix multiplication
+├── Section2_Q1/            Section 2 Q1 — batch analytics, C++ MapReduce
+├── Section2_Q2/            Section 2 Q2 — streaming analytics, Python gRPC
+├── Section3_Q2/            Section 3 Problem 2 — food ordering, gRPC
+├── data/                   the shared datasets (generated, not in git)
+└── report.pdf              the combined report covering all four
 ```
 
-Every question folder is self-contained and carries the same three documents:
+Inside every question folder the same shape repeats:
+
+```
+<question>/
+├── doc/                    readme.md, run.md, report.pdf
+├── scripts/                the shell scripts: build, run, benchmark, submit
+├── *.py / *.cpp            the code itself
+└── results/                CSVs and figures produced by the benchmarks
+```
+
+Every question folder is self-contained, and its `doc/` folder carries the same
+three documents:
 
 | File | What it is |
 | ---- | ---------- |
-| `readme.md` | what the question asks, what was built, and why |
-| `run.md` | the commands, the cluster rules, and a symptom/cause table |
-| `report.pdf` | the write-up, with figures |
+| `doc/readme.md` | what the question asks, what was built, and why |
+| `doc/run.md` | the commands, the cluster rules, and a symptom/cause table |
+| `doc/report.pdf` | the write-up, with figures |
+
+Shell scripts live in `scripts/`; Python and C++ are code and sit at the
+question's top level.
 
 So there are **four** reports: one per question, plus `report.pdf` at the root
 that covers all three together. Start with the root one; go to a question's own
@@ -79,14 +96,14 @@ Each question's `run.md` has the full instructions. The short version:
 
 ```bash
 # Section 1 Q1
-cd Q1 && sbatch run_cluster_test.sh && sbatch benchmark_scaling_slurm.sh
+cd Q1 && sbatch scripts/run_cluster_test.sh && sbatch scripts/benchmark_scaling_slurm.sh
 
 # Section 2 Q1
-cd Section2/Q1_mapreduce && make && bash scripts/make_data.sh
+cd Section2_Q1 && make && bash scripts/make_data.sh
 sbatch scripts/bench_q1.sh
 
 # Section 2 Q2
-cd Section2/Q2_grpc && bash scripts/setup_python.sh
+cd Section2_Q2 && bash scripts/setup_python.sh
 bash scripts/rce_q2.sh bench
 
 # Section 3 Problem 2
@@ -114,7 +131,7 @@ the course confirmed the Hadoop environment is unavailable and directed students
 to a Slurm-based script. The benchmark therefore follows the shape of the
 course's own `Mapreduce_distributed.sh`. The three programs are ordinary
 executables reading stdin and writing stdout — Hadoop Streaming's contract — so
-`Section2/Q1_mapreduce/scripts/run_hadoop.sh` runs them unchanged on a working
+`Section2_Q1/scripts/run_hadoop.sh` runs them unchanged on a working
 cluster.
 
 ---
@@ -123,13 +140,13 @@ cluster.
 
 | Not tracked | Why |
 | ----------- | --- |
-| `Section2/data/` | generated datasets, 460 MB; rebuilt with fixed seeds by `Q1_mapreduce/scripts/make_data.sh`, so the files come back byte-identical |
+| `data/` | generated datasets, 460 MB; rebuilt with fixed seeds by `Section2_Q1/scripts/make_data.sh`, so the files come back byte-identical |
 | `bin/`, `logs/`, `__pycache__/` | build and run products |
 | `*_pb2.py`, `*_pb2_grpc.py` | generated gRPC stubs — the generated code refuses to load unless it matches the installed grpcio version, so it belongs on each machine rather than in git |
 | `*.tex`, `report_build/` | the LaTeX the PDFs were built from; each question ships only its finished `report.pdf` |
 | `EXPLAIN.md` | personal working notes, one per question |
 
-The datasets sit at `Section2/` level rather than inside a question because the
+The datasets sit at the repository root rather than inside a question because the
 report compares Section 2's two questions on **the same bytes**; a separate copy
 per question could silently drift apart. For the same reason Q2 uses Q1's
 `bin/log_seq` as its correctness oracle — one baseline, not two that could
