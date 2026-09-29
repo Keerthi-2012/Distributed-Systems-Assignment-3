@@ -209,13 +209,41 @@ Note the coordinator address — every client needs it:
 COORD=$(cat logs/coord_addr.txt)
 ```
 
+### 3.2b The short way: one driver script
+
+Everything in 3.2–3.6 is wrapped in a single script, if you would rather not
+type the steps:
+
+```bash
+cd ~/HW3/Section2/Q2_grpc
+bash scripts/rce_q2.sh setup     # once: venv, grpcio, gRPC stubs
+bash scripts/rce_q2.sh bench     # submit the benchmark sweep, 6 nodes
+bash scripts/rce_q2.sh verify    # submit the correctness run, 4 nodes
+bash scripts/rce_q2.sh status    # your jobs + the tail of the newest log
+```
+
+For the live demo it cannot hold the nodes for you — `salloc` has to come from
+your own login shell, because a script exits and the allocation is freed with
+it. So:
+
+```bash
+salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=01:00:00
+cd ~/HW3/Section2/Q2_grpc
+bash scripts/rce_q2.sh demo
+```
+
+`demo` starts the coordinator and the workers, then **prints the exact
+`ssh` + command lines** for the dashboard, the stream and the correctness check,
+with your real node names and port already filled in. Copy them into two more
+terminals. `bash scripts/rce_q2.sh stop` shuts the servers down.
+
 ### 3.3 Watch it live (Terminal B)
 
 ```bash
 ssh <your-username>@rce.iiit.ac.in
 ssh node02                                     # allowed: you hold the allocation
 cd ~/HW3/Section2/Q2_grpc/src
-~/HW3/venv/bin/python3 dashboard.py $(cat ../../logs/coord_addr.txt)
+~/HW3/venv/bin/python3 dashboard.py $(cat ../logs/coord_addr.txt)
 ```
 
 The dashboard redraws about once a second and shows records received against
@@ -229,7 +257,7 @@ round of work, not ten. Ctrl-C quits the dashboard; the system keeps running.
 ssh <your-username>@rce.iiit.ac.in
 ssh node03
 cd ~/HW3/Section2/Q2_grpc/src
-~/HW3/venv/bin/python3 stream_client.py $(cat ../../logs/coord_addr.txt) \
+~/HW3/venv/bin/python3 stream_client.py $(cat ../logs/coord_addr.txt) \
     ../../data/medium.in --rate 100000 --wait
 ```
 
@@ -250,8 +278,8 @@ only once every record has been counted.
 While the stream is still running, from any node:
 
 ```bash
-~/HW3/venv/bin/python3 query_client.py $(cat ../../logs/coord_addr.txt)
-~/HW3/venv/bin/python3 query_client.py $(cat ../../logs/coord_addr.txt) --status
+~/HW3/venv/bin/python3 query_client.py $(cat ../logs/coord_addr.txt)
+~/HW3/venv/bin/python3 query_client.py $(cat ../logs/coord_addr.txt) --status
 ```
 
 After it finishes, the final answer must equal the sequential program's:
