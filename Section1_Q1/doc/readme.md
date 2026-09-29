@@ -24,7 +24,7 @@ instructions are in [run.md](run.md).**
 | [scripts/benchmark_scaling_slurm.sh](../scripts/benchmark_scaling_slurm.sh) | Slurm: 3 sizes × 1, 2, 4, 7 tasks — the speedup sweep | |
 | [plot_scaling.py](../plot_scaling.py) | the speedup, efficiency and stage-breakdown figures | 140 |
 | `test_data/` | the input matrices | |
-| `perf_results/` | everything the benchmarks produce (not in git) | |
+| `results/` | everything the benchmarks produce (not in git) | |
 
 ---
 
@@ -91,7 +91,7 @@ differently never changes the answer** — all 36 of its runs matched.
 
 ### 4.1 Adding machines helps, but only if there is enough work
 
-From `perf_results/scaling.csv`, median of 3 runs, one task per machine:
+From `results/scaling.csv`, median of 3 runs, one task per machine:
 
 | Input | 1 node | 2 nodes | 4 nodes | 7 nodes | Speedup at 7 |
 | ----- | ------ | ------- | ------- | ------- | ------------ |
@@ -111,7 +111,7 @@ faster than seven, once you count the coordination.
 
 ### 4.2 Shape matters more than size
 
-From `perf_results/dist_benchmark_summary.csv`, all at 4 nodes:
+From `results/dist_benchmark_summary.csv`, all at 4 nodes:
 
 | Shape | A | B | Total |
 | ----- | - | - | ----- |
@@ -139,7 +139,7 @@ of a barrier, not a bug.
 
 ### 4.3 Figures
 
-`python3 plot_scaling.py` writes into `perf_results/`:
+`python3 plot_scaling.py` writes into `results/`:
 
 | File | Shows |
 | ---- | ----- |

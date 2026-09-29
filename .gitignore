@@ -60,10 +60,10 @@ report_build/
 # The reducer's raw output matrices: 8.9 MB of numbers nobody reads. The
 # answers are checked by verify.py as the benchmark runs, and the timings that
 # matter are extracted into the CSVs, which ARE tracked.
-Section1_Q1/perf_results/output_*.txt
+Section1_Q1/results/output_*.txt
 # Slurm's own per-job logs.
-Section1_Q1/perf_results/*_[0-9]*.out
-Section1_Q1/perf_results/*_[0-9]*.err
+Section1_Q1/results/*_[0-9]*.out
+Section1_Q1/results/*_[0-9]*.err
 
 # ---- generated gRPC stubs for Q3 -------------------------------------------
 # Same reason as Q2's stubs: generated code refuses to load unless it matches

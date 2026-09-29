@@ -25,7 +25,7 @@ the three commands that matter are at the bottom under [Everything at once](#6-e
 From your laptop:
 
 ```bash
-rsync -avz --exclude perf_results/ Section1_Q1/ <your-username>@rce.iiit.ac.in:~/HW3/Section1_Q1/
+rsync -avz --exclude results/ Section1_Q1/ <your-username>@rce.iiit.ac.in:~/HW3/Section1_Q1/
 ```
 
 Then log in:
@@ -50,7 +50,7 @@ the code, so there is no generation step either.
 cd ~/HW3/Section1_Q1
 sbatch scripts/run_cluster_test.sh
 squeue -u $USER                          # wait for it to disappear
-cat perf_results/test_results_<jobid>.out
+cat results/test_results_<jobid>.out
 ```
 
 Expected last line: `Results: 9 PASSED / 0 FAILED`.
@@ -65,11 +65,11 @@ with no MapReduce at all.
 > location, so they run correctly from anywhere — but Slurm writes the job log
 > relative to the directory you submitted from, and cannot expand variables in
 > `#SBATCH` lines. Submit from the question folder and the log lands in
-> `perf_results/` beside the results it describes; submit from `~/HW3` and it
+> `results/` beside the results it describes; submit from `~/HW3` and it
 > lands loose in your home directory.
 >
 > Intermediate files (`chunk_*`, `map_*.out`, …) go to
-> `perf_results/work_<jobid>/`, which is removed when the job ends, so nothing
+> `results/work_<jobid>/`, which is removed when the job ends, so nothing
 > is left beside the source.
 
 ---
@@ -82,22 +82,22 @@ They answer different questions, so both are worth running.
 
 ```bash
 sbatch scripts/benchmark_dist_slurm.sh
-cat perf_results/benchmark_dist_results_<jobid>.out
+cat results/benchmark_dist_results_<jobid>.out
 ```
 
 Seven matrix shapes, all at a fixed 4 nodes, timed per stage. Writes
-`perf_results/dist_benchmark_summary.csv`.
+`results/dist_benchmark_summary.csv`.
 
 ### 4.2 Scaling — does adding machines help?
 
 ```bash
 sbatch scripts/benchmark_scaling_slurm.sh
-cat perf_results/scaling_<jobid>.out
+cat results/scaling_<jobid>.out
 ```
 
 Three input sizes (Small 100×50, Medium 500×50, Large 2000×50), each run with
 **1, 2, 4 and 7 map tasks**, three repeats each, timed per stage. Writes
-`perf_results/scaling.csv`.
+`results/scaling.csv`.
 
 Seven nodes with **one task on each**, so a task count of N means N separate
 machines. This is the only honest way to measure speedup: packing several tasks
@@ -118,7 +118,7 @@ answer **faster** than the right one, which otherwise looks like a good result.
 python3 plot_scaling.py
 ```
 
-Reads `perf_results/scaling.csv` and writes five figures into `perf_results/`:
+Reads `results/scaling.csv` and writes five figures into `results/`:
 
 | File | Shows |
 | ---- | ----- |
@@ -136,7 +136,7 @@ It needs matplotlib. On RCE:
 Bring everything home:
 
 ```bash
-rsync -avz <your-username>@rce.iiit.ac.in:~/HW3/Section1_Section1_Q1/perf_results/ Section1_Q1/perf_results/
+rsync -avz <your-username>@rce.iiit.ac.in:~/HW3/Section1_Section1_Q1/results/ Section1_Q1/results/
 ```
 
 ---

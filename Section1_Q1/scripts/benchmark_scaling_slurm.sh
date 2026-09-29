@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mapreduce_scaling
-#SBATCH --output=perf_results/scaling_%j.out
-#SBATCH --error=perf_results/scaling_%j.err
+#SBATCH --output=results/scaling_%j.out
+#SBATCH --error=results/scaling_%j.err
 
 # Slurm writes the two files above relative to the directory you SUBMIT from,
 # not to this script's location, and it cannot expand variables in #SBATCH
@@ -9,10 +9,10 @@
 #
 #     cd ~/HW3/Section1_Q1 && sbatch scripts/benchmark_scaling_slurm.sh
 #
-# and the log lands in perf_results/ beside the results it describes. Submitting
+# and the log lands in results/ beside the results it describes. Submitting
 # from ~/HW3 instead used to scatter test_results_*.out across the home
 # directory.
-#SBATCH --nodes=7
+#SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=01:00:00
@@ -25,12 +25,14 @@
 # show speedup. This one does the opposite: 3 input sizes, each run with
 # 1, 2, 4 and 8 map tasks, so speedup and parallel efficiency can be worked out.
 #
-# SEVEN nodes, ONE task on each, so p tasks means p separate machines. Packing
+# SIX nodes, ONE task on each, so p tasks means p separate machines. Packing
 # several tasks onto one node instead would make them share a physical core and
 # the "speedup" would measure the scheduler, not the program.
 #
-# Seven, not eight, because node08 is drained and an 8-node job would queue for
-# ever. The sweep is therefore 1, 2, 4, 7 rather than 1, 2, 4, 8.
+# Six, not eight, because node08 is drained and node07 is draining, so only six
+# machines can actually be allocated. The sweep is therefore 1, 2, 4, 6. Raise
+# both numbers together if more nodes come back: asking for more tasks than the
+# allocation has slots does NOT fail loudly, it silently runs fewer.
 #
 # Do NOT put 8 back while only 7 nodes are usable. The allocation grants one
 # task slot per node, so `srun --ntasks=8` across 7 nodes silently starts only
@@ -39,23 +41,37 @@
 # Job 99808 did exactly this - every p=8 run came out wrong. The check below
 # now catches it instead of relying on the output comparison.
 #
-# Output: perf_results/scaling.csv - one row per run, timed per stage.
+# Output: results/scaling.csv - one row per run, timed per stage.
 
-# Work from the question folder, whatever directory this was submitted from.
-# Resolving against the script's own location rather than $SLURM_SUBMIT_DIR is
-# deliberate: submitting from the wrong directory used to make the run "succeed"
-# in nine seconds with 0 PASSED / 9 FAILED and "can't open file 'combiner.py'",
-# because $SLURM_SUBMIT_DIR pointed somewhere with no code in it.
-QDIR=$(cd "$(dirname "$0")/.." && pwd)
+# Find the question folder.
+#
+# Under sbatch, $0 is Slurm's own COPY of this script in /var/spool/slurmd, not
+# the path you submitted, so deriving the folder from $0 alone lands in an
+# unwritable system directory - that is exactly how job 99933 failed with
+# "mkdir: cannot create directory /var/spool/slurmd/results: Permission denied".
+#
+# $SLURM_SUBMIT_DIR is the directory you submitted FROM, which is the right
+# answer when you submit from the question folder as intended. The two fallbacks
+# cover submitting from ~/HW3 by mistake, and running the script directly with
+# bash outside Slurm. If none of them contains the code, stop and say so rather
+# than running on and reporting nine failures.
+QDIR=${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
+[ -f "$QDIR/mapper.py" ] || QDIR="$QDIR/Section1_Q1"
+[ -f "$QDIR/mapper.py" ] || QDIR=$(cd "$(dirname "$0")/.." && pwd)
+if [ ! -f "$QDIR/mapper.py" ]; then
+    echo "ERROR: cannot find mapper.py. Submit from the question folder:" >&2
+    echo "    cd ~/HW3/Section1_Q1 && sbatch scripts/$(basename "$0")" >&2
+    exit 1
+fi
 cd "$QDIR"
-mkdir -p perf_results
-WORK=$PWD/perf_results/work_$$
+mkdir -p results
+WORK=$PWD/results/work_$$
 mkdir -p "$WORK"
 
 REPEATS=${REPEATS:-3}
-TASKS_LIST=${TASKS_LIST:-"1 2 4 7"}
+TASKS_LIST=${TASKS_LIST:-"1 2 4 6"}
 
-CSV=perf_results/scaling.csv
+CSV=results/scaling.csv
 echo "size,rows_A,cols_A,rows_B,cols_B,tasks,run,mapper_s,shuffle1_s,combiner_s,shuffle2_s,reducer_s,total_s,correct" > "$CSV"
 
 # label | A file | B file

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mapreduce_benchmark
-#SBATCH --output=perf_results/benchmark_dist_results_%j.out
-#SBATCH --error=perf_results/benchmark_dist_results_%j.err
+#SBATCH --output=results/benchmark_dist_results_%j.out
+#SBATCH --error=results/benchmark_dist_results_%j.err
 #SBATCH --nodes=4
 #SBATCH --ntasks=4
 #SBATCH --cpus-per-task=1
@@ -12,7 +12,7 @@
 #
 #     cd ~/HW3/Section1_Q1 && sbatch scripts/benchmark_dist_slurm.sh
 #
-# and the log lands in perf_results/ beside the results it describes. Submitting
+# and the log lands in results/ beside the results it describes. Submitting
 # from ~/HW3 instead used to scatter test_results_*.out across the home
 # directory.
 #SBATCH --time=00:30:00
@@ -20,25 +20,39 @@
 # Distributed benchmark — 7 shapes across 4 nodes
 # Covers: baseline, square divisible, square NOT divisible, tall (m>>n), wide (n>>m)
 
-# Work from the question folder, whatever directory this was submitted from.
-# Resolving against the script's own location rather than $SLURM_SUBMIT_DIR is
-# deliberate: submitting from the wrong directory used to make the run "succeed"
-# in nine seconds with 0 PASSED / 9 FAILED and "can't open file 'combiner.py'",
-# because $SLURM_SUBMIT_DIR pointed somewhere with no code in it.
-QDIR=$(cd "$(dirname "$0")/.." && pwd)
+# Find the question folder.
+#
+# Under sbatch, $0 is Slurm's own COPY of this script in /var/spool/slurmd, not
+# the path you submitted, so deriving the folder from $0 alone lands in an
+# unwritable system directory - that is exactly how job 99933 failed with
+# "mkdir: cannot create directory /var/spool/slurmd/results: Permission denied".
+#
+# $SLURM_SUBMIT_DIR is the directory you submitted FROM, which is the right
+# answer when you submit from the question folder as intended. The two fallbacks
+# cover submitting from ~/HW3 by mistake, and running the script directly with
+# bash outside Slurm. If none of them contains the code, stop and say so rather
+# than running on and reporting nine failures.
+QDIR=${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
+[ -f "$QDIR/mapper.py" ] || QDIR="$QDIR/Section1_Q1"
+[ -f "$QDIR/mapper.py" ] || QDIR=$(cd "$(dirname "$0")/.." && pwd)
+if [ ! -f "$QDIR/mapper.py" ]; then
+    echo "ERROR: cannot find mapper.py. Submit from the question folder:" >&2
+    echo "    cd ~/HW3/Section1_Q1 && sbatch scripts/$(basename "$0")" >&2
+    exit 1
+fi
 cd "$QDIR"
-mkdir -p perf_results
+mkdir -p results
 
 # Intermediate files go in a per-job scratch directory, not in the question
 # folder. They used to be written beside mapper.py, so a run left chunk_*,
 # map_*.out, shuf1_*.out and comb_*.out lying next to the source, and two jobs
 # running at once would overwrite each other's. Home is shared by every compute
 # node, so the scratch directory is visible from all of them.
-WORK=$QDIR/perf_results/work_${SLURM_JOB_ID:-$$}
+WORK=$QDIR/results/work_${SLURM_JOB_ID:-$$}
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p perf_results
-SUMMARY="perf_results/dist_benchmark_summary.csv"
+mkdir -p results
+SUMMARY="results/dist_benchmark_summary.csv"
 echo "label,shape_A,shape_B,divisible_by_4,mapper_s,shuffle1_s,combiner_s,shuffle2_s,reducer_s,total_s" > "$SUMMARY"
 
 # Test cases: label | A_file | B_file | divisible?
@@ -100,7 +114,7 @@ for ENTRY in "${TEST_CASES[@]}"; do
 
     # Stage 5: Reducer on master
     S=$(date +%s%N)
-    python3 reducer.py < "$WORK/global_shuf2.out" > "perf_results/output_${LABEL}.txt"
+    python3 reducer.py < "$WORK/global_shuf2.out" > "results/output_${LABEL}.txt"
     RED=$(echo "scale=6; ($(date +%s%N) - $S) / 1000000000" | bc)
 
     TOTAL=$(echo "scale=6; ($(date +%s%N) - $TOTAL_START) / 1000000000" | bc)

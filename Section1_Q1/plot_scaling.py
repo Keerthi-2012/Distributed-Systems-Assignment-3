@@ -3,10 +3,10 @@
 
     python3 plot_scaling.py
 
-Reads   perf_results/scaling.csv   (written by benchmark_scaling_slurm.sh)
-Writes  perf_results/speedup.png
-        perf_results/efficiency.png
-        perf_results/stages_Small.png, stages_Medium.png, stages_Large.png
+Reads   results/scaling.csv   (written by benchmark_scaling_slurm.sh)
+Writes  results/speedup.png
+        results/efficiency.png
+        results/stages_Small.png, stages_Medium.png, stages_Large.png
 
 Every configuration is run several times; the plots use the MEDIAN, because a
 shared cluster produces the occasional slow run and a single measurement would
@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RESULTS = os.path.join(HERE, "perf_results")
+RESULTS = os.path.join(HERE, "results")
 CSV = os.path.join(RESULTS, "scaling.csv")
 
 SIZES = ["Small", "Medium", "Large"]
