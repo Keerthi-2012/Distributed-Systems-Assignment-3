@@ -10,7 +10,19 @@
 
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
+# Which Python to use. grpcio is usually not installed in the system python3,
+# so prefer a virtualenv: the project's .venv locally, or ~/HW3/venv on RCE.
+# Override with PY=... if yours lives somewhere else.
+if [ -z "${PY:-}" ]; then
+    for candidate in "$ROOT/../../.venv/bin/python3" "$HOME/HW3/venv/bin/python3"; do
+        [ -x "$candidate" ] && { PY=$candidate; break; }
+    done
+fi
 PY=${PY:-python3}
+if ! "$PY" -c "import grpc" 2>/dev/null; then
+    echo "$PY cannot import grpc - install it with: $PY -m pip install grpcio grpcio-tools"
+    exit 1
+fi
 SRC=$ROOT/src
 mkdir -p logs
 

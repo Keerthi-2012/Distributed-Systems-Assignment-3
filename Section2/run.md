@@ -242,8 +242,8 @@ terminals. `bash scripts/rce_q2.sh stop` shuts the servers down.
 ```bash
 ssh <your-username>@rce.iiit.ac.in
 ssh node02                                     # allowed: you hold the allocation
-cd ~/HW3/Section2/Q2_grpc/src
-~/HW3/venv/bin/python3 dashboard.py $(cat ../logs/coord_addr.txt)
+cd ~/HW3/Section2/Q2_grpc                      # <-- this folder, not src/
+~/HW3/venv/bin/python3 src/dashboard.py $(cat logs/coord_addr.txt)
 ```
 
 The dashboard redraws about once a second and shows records received against
@@ -256,9 +256,9 @@ round of work, not ten. Ctrl-C quits the dashboard; the system keeps running.
 ```bash
 ssh <your-username>@rce.iiit.ac.in
 ssh node03
-cd ~/HW3/Section2/Q2_grpc/src
-~/HW3/venv/bin/python3 stream_client.py $(cat ../logs/coord_addr.txt) \
-    ../../data/medium.in --rate 100000 --wait
+cd ~/HW3/Section2/Q2_grpc                      # <-- this folder, not src/
+~/HW3/venv/bin/python3 src/stream_client.py $(cat logs/coord_addr.txt) \
+    ../data/medium.in --rate 100000 --wait
 ```
 
 `--rate 100000` makes the 1M-record file take about 10 seconds, so you can watch
@@ -275,12 +275,22 @@ only once every record has been counted.
 
 ### 3.5 Query it, and check the answer
 
-While the stream is still running, from any node:
+While the stream is still running, from any node you hold:
 
 ```bash
-~/HW3/venv/bin/python3 query_client.py $(cat ../logs/coord_addr.txt)
-~/HW3/venv/bin/python3 query_client.py $(cat ../logs/coord_addr.txt) --status
+cd ~/HW3/Section2/Q2_grpc                      # <-- this folder, not src/
+~/HW3/venv/bin/python3 src/query_client.py $(cat logs/coord_addr.txt)
+~/HW3/venv/bin/python3 src/query_client.py $(cat logs/coord_addr.txt) --status
 ```
+
+> **Every command in 3.3–3.6 is run from `~/HW3/Section2/Q2_grpc`**, so the
+> programs are `src/...` and the address file is `logs/coord_addr.txt`. Running
+> them from inside `src/` instead gives
+> `can't open file '.../Q2_grpc/query_client.py'`.
+>
+> **`logs/coord_addr.txt` only exists once `rce_start.sh` has run** (step 3.2),
+> from inside an allocation. `cat: logs/coord_addr.txt: No such file` means the
+> system was never started, or was started from a different folder.
 
 After it finishes, the final answer must equal the sequential program's:
 
