@@ -53,7 +53,7 @@ Inside every question folder the same shape repeats:
 
 ```
 <question>/
-├── doc/                    readme.md, run.md (+ report.pdf, except Section3_Q2)
+├── doc/                    readme.md, run.md, report.pdf (Section3_Q2: readme.md only)
 ├── scripts/                the shell scripts: build, run, benchmark, submit
 ├── *.py / *.cpp            the code itself
 └── results/                CSVs and figures produced by the benchmarks
@@ -68,9 +68,11 @@ documents:
 | `doc/run.md` | the commands, the cluster rules, and a symptom/cause table |
 | `doc/report.pdf` | the write-up, with figures — the three measured questions only |
 
-Section 3 Problem 2 has no separate report: the assignment asks there for a
-README that documents how to run the system and demonstrates it with multiple
-clients, which is what `Section3_Q2/doc/readme.md` does.
+Section 3 Problem 2 is the exception: it has only `doc/readme.md`. The
+assignment asks there for a README that documents how to run the system and
+demonstrates it with multiple clients, so the commands, the cluster rules and
+the symptom/cause table all live inside that one file rather than in a separate
+`run.md`, and there is no separate report.
 
 Shell scripts live in `scripts/`; Python and C++ are code and sit at the
 question's top level.
@@ -96,7 +98,8 @@ Everything above was measured on the RCE cluster, one process per machine.
 
 ## Running any of it
 
-Each question's `run.md` has the full instructions. The short version:
+Each question's `run.md` has the full instructions — for Section 3 Problem 2,
+its `readme.md`. The short version:
 
 ```bash
 # Section 1 Q1

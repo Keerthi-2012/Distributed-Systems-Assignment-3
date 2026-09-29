@@ -11,8 +11,6 @@ Every transcript below is real output, captured from a run of this code. Order
 ids are handed out in order from a freshly started server, so if you follow the
 steps from a fresh `server.py` you will see exactly these ids.
 
-Full command reference, including the cluster: **[run.md](run.md)**.
-
 ---
 
 ## 1. Files
@@ -314,9 +312,66 @@ Trying the same thing once the restaurant has accepted the order gives
 ### On the cluster
 
 Same thing across machines — the server binds `0.0.0.0` so other nodes can reach
-it, and clients are given `<server-node>:<port>`. Full steps, including choosing
-a port that will not collide with other students, are in
-**[run.md](run.md#3-on-the-rce-cluster)**.
+it, and clients are given `<server-node>:<port>`.
+
+Three rules first:
+
+1. **Never run servers on the login node.** Hold machines with `salloc`.
+2. **You can only `ssh` to a node you currently hold**, or you get
+   `Access denied by pam_slurm_adopt`.
+3. **Do not use port 50051.** It is the example port in the RCE guide, so every
+   student tries to bind it. If someone else already holds it your server dies
+   and your client silently connects to *theirs*, which shows up as
+   `Method not found` rather than as an error you would recognise. Derive a port
+   from your user id instead.
+
+```bash
+ssh <your-username>@rce.iiit.ac.in
+salloc --nodes=3 --ntasks-per-node=1 --cpus-per-task=4 --time=01:00:00
+scontrol show hostnames $SLURM_JOB_NODELIST      # e.g. node01 node02 node03
+PORT=$((50000 + $(id -u) % 9000))
+echo $PORT
+```
+
+**Terminal A — the server, on the first node.** Bind `0.0.0.0`; `localhost`
+would accept connections only from that node itself:
+
+```bash
+ssh node01
+cd ~/HW3/Section3_Q2
+~/HW3/venv/bin/python3 server.py 0.0.0.0:$PORT
+```
+
+**Terminal B — a customer, on the second node:**
+
+```bash
+ssh node02
+cd ~/HW3/Section3_Q2
+~/HW3/venv/bin/python3 customer.py node01:$PORT
+```
+
+**Terminal C — a restaurant, on the third node:**
+
+```bash
+ssh node03
+cd ~/HW3/Section3_Q2
+~/HW3/venv/bin/python3 restaurant.py node01:$PORT "Pizza House"
+```
+
+A fourth terminal with a second customer shows two clients interacting with the
+server at the same time.
+
+### If something goes wrong
+
+| Symptom | Cause |
+| ------- | ----- |
+| `Method not found` | stale generated stubs — regenerate them; or you connected to another student's server on port 50051 |
+| `ModuleNotFoundError: No module named 'grpc'` | using the system `python3` on RCE; use `~/HW3/venv/bin/python3` |
+| `ModuleNotFoundError: food_ordering_pb2` | stubs never generated — see §2 |
+| Clients on other nodes cannot connect | the server was bound to `localhost`; bind `0.0.0.0` |
+| `failed to connect to all addresses` | wrong node name or port, or the server is not running |
+| `Access denied by pam_slurm_adopt` | you tried to `ssh` to a node you do not hold |
+| Tracking terminal shows nothing | that is correct until the restaurant changes the status |
 
 ---
 
