@@ -190,12 +190,12 @@ build and is not in the repository.
 | File | What it is | Lines |
 | ---- | ---------- | ----- |
 | **Shared** | | |
-| [common/analytics.h](common/analytics.h) | the shared `Stats` box, how to add two of them together, and the `key<TAB>value` format they travel in | 99 |
-| [common/analytics.cpp](common/analytics.cpp) | its implementation: merging, record parsing, writing and reading the pair format | 156 |
+| [common/analytics.h](common/analytics.h) | the shared `Stats` box, how to add two of them together, and the `key<TAB>value` format they travel in | 48 |
+| [common/analytics.cpp](common/analytics.cpp) | its implementation: merging, record parsing, writing and reading the pair format | 125 |
 | **Q1 — MapReduce** | | |
-| [Q1_mapreduce/mapper.cpp](Q1_mapreduce/mapper.cpp) | **the map step**: reads a split of the log file, counts every record (all the per-record logic is here), emits per-server / per-endpoint / per-interval aggregates | 127 |
-| [Q1_mapreduce/combiner.cpp](Q1_mapreduce/combiner.cpp) | merges a mapper's own pairs before the shuffle; same format in and out | 35 |
-| [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) | **the reduce step**: adds every mapper's pairs together, then works out the averages, the busiest interval and the Top-K lists and prints them | 149 |
+| [Q1_mapreduce/mapper.cpp](Q1_mapreduce/mapper.cpp) | **the map step**: reads a split of the log file, counts every record (all the per-record logic is here), emits per-server / per-endpoint / per-interval aggregates | 60 |
+| [Q1_mapreduce/combiner.cpp](Q1_mapreduce/combiner.cpp) | merges a mapper's own pairs before the shuffle; same format in and out | 20 |
+| [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) | **the reduce step**: adds every mapper's pairs together, then works out the averages, the busiest interval and the Top-K lists and prints them | 95 |
 | [Q1_mapreduce/run_hadoop.sh](Q1_mapreduce/run_hadoop.sh) | runs it as a real Hadoop Streaming job on YARN, then diffs against `log_seq` | 70 |
 | **Q2 — gRPC (Python)** | | |
 | [Q2_grpc/proto/loganalytics.proto](Q2_grpc/proto/loganalytics.proto) | the interface: `LogAnalytics` (public) and `Worker` (internal) | 211 |
@@ -283,8 +283,8 @@ program can be read on its own:
 | Logic | Where it lives |
 | ----- | -------------- |
 | counting one record — statuses, min/max, per-server, per-endpoint, per-minute | [Q1_mapreduce/mapper.cpp](Q1_mapreduce/mapper.cpp) (`count`) |
-| the final report — averages, busiest interval, Top-K sorting, printing | [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) (`print_report`) |
-| adding two partial results together | [common/analytics.cpp](common/analytics.cpp) (`Stats::add`) |
+| the final report — averages, busiest interval, Top-K sorting, printing | [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) (`print_answer`) |
+| adding two partial results together | [common/analytics.cpp](common/analytics.cpp) (`add_stats`) |
 
 Q2 is Python and has its own [analytics.py](Q2_grpc/src/analytics.py), which
 follows the same design. The two are kept honest not by sharing code but by both
