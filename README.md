@@ -50,7 +50,7 @@ Every question folder is self-contained and carries the same three documents:
 
 | File | What it is |
 | ---- | ---------- |
-| `README.md` | what the question asks, what was built, and why |
+| `readme.md` | what the question asks, what was built, and why |
 | `run.md` | the commands, the cluster rules, and a symptom/cause table |
 | `report.pdf` | the write-up, with figures |
 

@@ -233,7 +233,7 @@ produced by the build and is not in the repository.
 
 ```
 Section2/
-├── README.md              this file: spec, design, how to run, results
+├── readme.md              this file: spec, design, how to run, results
 ├── run.md                 step-by-step instructions for the RCE cluster
 │
 ├── Q1_mapreduce/                 ---- everything Q1 needs, and nothing else ----
