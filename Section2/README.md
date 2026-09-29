@@ -28,7 +28,9 @@ against a fixed, written-down specification instead of against each other.
 | **Q2** gRPC streaming (Python) | **76 / 76 checks** | **3.00M records/s** with 4 workers (3.75× on 4); queries answered throughout ingestion, p99 **25 ms** under one closed-loop client |
 | **MPI** comparison (C++, reconstructed) | identical at 1, 2, 4, 8 processes | 10M records in 2.16 s at 8 processes |
 
-Full analysis, tables and plots: **[REPORT.md](REPORT.md)**. How to build and
+Full analysis, tables and plots: each question's own **report.pdf**
+([Q1_mapreduce/report.pdf](Q1_mapreduce/report.pdf),
+[Q2_grpc/report.pdf](Q2_grpc/report.pdf)). How to build and
 run everything: **[run.md](run.md)**.
 
 ## Contents
@@ -233,7 +235,6 @@ produced by the build and is not in the repository.
 Section2/
 ├── README.md              this file: spec, design, how to run, results
 ├── run.md                 step-by-step instructions for the RCE cluster
-├── REPORT.md              the measurements and what they mean
 │
 ├── Q1_mapreduce/                 ---- everything Q1 needs, and nothing else ----
 │   ├── Makefile                  builds all of the below

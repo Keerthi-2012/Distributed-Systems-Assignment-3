@@ -79,7 +79,9 @@ cat test_results_<jobid>.out
 Same HW2 Q7 analytics (request counts, status classes, response-time min/max/mean,
 bytes, busiest 60-second interval, Top-K servers and endpoints) implemented twice.
 Full instructions: **[Section2/run.md](Section2/run.md)**. Design notes:
-[Section2/README.md](Section2/README.md). Detailed results: [Section2/REPORT.md](Section2/REPORT.md).
+[Section2/README.md](Section2/README.md). Detailed results: each question's own
+report.pdf — [Section2/Q1_mapreduce/report.pdf](Section2/Q1_mapreduce/report.pdf) and
+[Section2/Q2_grpc/report.pdf](Section2/Q2_grpc/report.pdf).
 
 ### Q1 — MapReduce (C++)
 

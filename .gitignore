@@ -79,11 +79,18 @@ Q1/perf_results/*_[0-9]*.err
 Q3/food_ordering_pb2.py
 Q3/food_ordering_pb2_grpc.py
 
-# ---- LaTeX intermediates from the per-question reports ---------------------
-# Each question builds its own report.pdf from its own report.tex; both are
-# tracked, the scratch files pdflatex leaves behind are not.
+# ---- LaTeX sources and intermediates ---------------------------------------
+# Each question ships only its finished report.pdf. The .tex it was built from
+# and everything pdflatex leaves behind stay out of the repository.
+*.tex
 *.aux
 *.toc
 *.synctex.gz
 *.fls
 *.fdb_latexmk
+
+# ---- markdown reports ------------------------------------------------------
+# Superseded by each question's report.pdf, so there is only ever one write-up
+# per question and the two cannot drift apart.
+report.md
+REPORT.md
