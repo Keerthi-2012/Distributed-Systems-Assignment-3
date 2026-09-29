@@ -113,13 +113,29 @@ class FoodOrderingServicer(pb2_grpc.FoodOrderingServiceServicer):
 
         try:
             while context.is_active():
-                update = subscriber_queue.get()
+                # Wait with a TIMEOUT, never for ever. This call occupies one
+                # thread of the server's pool for as long as the customer keeps
+                # tracking, and a bare get() would hold that thread even while
+                # nothing is happening. With enough customers tracking at once,
+                # every thread would be parked here and the server would stop
+                # answering ordinary calls: ListRestaurants and PlaceOrder would
+                # simply time out. Waking up once a second lets us re-check
+                # whether the customer is still connected and release the thread
+                # when they are not.
+                try:
+                    update = subscriber_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
                 yield update
                 if update.status in ("READY", "CANCELLED"):
                     break
         finally:
             with self.lock:
-                self.subscribers[request.order_id].remove(subscriber_queue)
+                # discard() rather than remove(): the order may already have
+                # been cleaned up, and a missing entry is not an error here.
+                waiting = self.subscribers.get(request.order_id, [])
+                if subscriber_queue in waiting:
+                    waiting.remove(subscriber_queue)
 
     def ListRestaurantOrders(self, request, context):
         with self.lock:
@@ -131,8 +147,15 @@ class FoodOrderingServicer(pb2_grpc.FoodOrderingServiceServicer):
         return pb2.RestaurantOrdersResponse(orders=summaries)
 
 
+# Each customer tracking an order holds one thread for as long as they watch,
+# so the pool has to be large enough for every tracker PLUS the ordinary calls
+# arriving at the same time. Ten was too few: ten customers tracking their
+# orders used every thread, and the server stopped responding altogether.
+MAX_WORKERS = 64
+
+
 def serve(address):
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=MAX_WORKERS))
     pb2_grpc.add_FoodOrderingServiceServicer_to_server(FoodOrderingServicer(), server)
     server.add_insecure_port(address)
     server.start()

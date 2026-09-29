@@ -26,9 +26,10 @@ streaming system. Both produce byte-identical output to the Homework 2
 sequential program, which is what makes the comparison between them meaningful.
 
 **Section 3 offers two problems**, Collaborative Document Editing (Problem 1)
-and the Food Ordering System (Problem 2). We implemented **Problem 2**, which
-lives in `Q3/` — the folder is named for the section, not for the problem
-number.
+and the Food Ordering System (Problem 2). **Problem 2 is ours**, and it lives in
+`Q3/` — the folder is named for the section, not for the problem number.
+Likewise, Section 1 lists three MapReduce questions and **Q1 is ours**. The
+questions not present here were not assigned to this team.
 
 ---
 
@@ -66,7 +67,7 @@ report for the detail.
 | Section 1 Q1 | **9 / 9** cases, and all 36 benchmark runs | 4.14× on 7 machines (largest input) |
 | Section 2 Q1 | **34 / 34** checks | 4.66× on 6 machines; shuffle 278× smaller than input |
 | Section 2 Q2 | **76 / 76** checks | 2.9M records/s on 4 machines, while serving queries |
-| Section 3 P2 | all 6 exception cases return correct gRPC codes | 20 concurrent orders, unique ids, no errors |
+| Section 3 P2 | all 6 exception cases return correct gRPC codes | 40 concurrent order trackers, server stays responsive |
 
 Everything above was measured on the RCE cluster, one process per machine.
 
