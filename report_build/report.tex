@@ -139,13 +139,13 @@ Four nodes, four map tasks. Times in seconds.
 \toprule
 \textbf{Case} & \textbf{$A$} & \textbf{$B$} & \textbf{div.} & \textbf{Map} & \textbf{Shuffle} & \textbf{Combine} & \textbf{Reduce} & \textbf{Total} \\
 \midrule
-p1\_small & 100x50 & 50x50 & yes & 0.22 & 0.17 & 0.18 & 0.02 & \textbf{0.60} \\
-p1\_medium & 500x50 & 50x50 & yes & 0.31 & 0.22 & 0.24 & 0.03 & \textbf{0.82} \\
-p1\_large & 2000x50 & 50x50 & yes & 0.76 & 0.38 & 0.46 & 0.09 & \textbf{1.72} \\
-p1\_square & 1000x100 & 100x1000 & yes & 11.05 & 12.30 & 5.53 & 0.69 & \textbf{29.63} \\
-p1\_square\_uneven & 1001x100 & 100x1000 & no & 11.07 & 13.11 & 5.54 & 0.69 & \textbf{30.47} \\
-p1\_tall & 5000x10 & 10x10 & yes & 0.27 & 0.19 & 0.23 & 0.06 & \textbf{0.77} \\
-p1\_wide & 10x500 & 500x10 & no & 0.18 & 0.17 & 0.19 & 0.02 & \textbf{0.57} \\
+p1\_small & 100x50 & 50x50 & yes & 0.26 & 0.19 & 0.22 & 0.02 & \textbf{0.71} \\
+p1\_medium & 500x50 & 50x50 & yes & 0.45 & 0.23 & 0.34 & 0.03 & \textbf{1.07} \\
+p1\_large & 2000x50 & 50x50 & yes & 1.15 & 0.41 & 0.78 & 0.09 & \textbf{2.45} \\
+p1\_square & 1000x100 & 100x1000 & yes & 17.53 & 20.48 & 11.43 & 0.70 & \textbf{50.22} \\
+p1\_square\_uneven & 1001x100 & 100x1000 & no & 18.34 & 22.92 & 11.94 & 0.69 & \textbf{53.96} \\
+p1\_tall & 5000x10 & 10x10 & yes & 0.34 & 0.22 & 0.28 & 0.06 & \textbf{0.93} \\
+p1\_wide & 10x500 & 500x10 & no & 0.22 & 0.18 & 0.21 & 0.01 & \textbf{0.65} \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -251,10 +251,10 @@ seconds.
 \toprule
 \textbf{Map tasks} & \textbf{100k records} & \textbf{1M records} & \textbf{10M records} & \textbf{10M: map stage} & \textbf{Speedup} \\
 \midrule
-1 & 0.354 & 1.791 & 16.989 & 16.393 & 1.00$\times$ \\
-2 & 0.312 & 1.162 & 9.947 & 9.430 & 1.71$\times$ \\
-4 & 0.304 & 0.717 & 5.184 & 4.714 & 3.28$\times$ \\
-6 & 0.299 & 0.608 & 3.640 & 3.173 & 4.67$\times$ \\
+1 & 0.354 & 1.797 & 16.945 & 16.347 & 1.00$\times$ \\
+2 & 0.311 & 1.178 & 9.978 & 9.468 & 1.70$\times$ \\
+4 & 0.294 & 0.738 & 5.225 & 4.754 & 3.24$\times$ \\
+6 & 0.288 & 0.586 & 3.637 & 3.172 & 4.66$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -267,7 +267,7 @@ work is parsing ten million lines of text, not transferring them, and the progra
 therefore compute-bound and scales with available cores.
 
 \textbf{Speedup tracks the map stage across the whole sweep.} On the 10M-record input
-the pipeline reaches 4.67$\times$ on 6 nodes, against a linear
+the pipeline reaches 4.66$\times$ on 6 nodes, against a linear
 ideal of $6\times$, and the map stage falls from $16.39$\,s to $3.16$\,s. Every added
 node is a whole machine, so there is no contention for cores between map tasks and no
 point at which adding one stops helping, which is what distinguishes this sweep from an
@@ -310,17 +310,17 @@ below therefore compare like with like.
 \toprule
 \textbf{Nodes} & \textbf{MPI} & \textbf{MapReduce} & \textbf{Ratio} & \textbf{MPI speedup} & \textbf{MapReduce speedup} \\
 \midrule
-1 & 7.487 & 16.989 & 2.27$\times$ & 1.00$\times$ & 1.00$\times$ \\
-2 & 4.531 & 9.947 & 2.20$\times$ & 1.65$\times$ & 1.71$\times$ \\
-4 & 2.505 & 5.184 & 2.07$\times$ & 2.99$\times$ & 3.28$\times$ \\
-6 & 1.807 & 3.640 & 2.01$\times$ & 4.14$\times$ & 4.67$\times$ \\
+1 & 7.692 & 16.945 & 2.20$\times$ & 1.00$\times$ & 1.00$\times$ \\
+2 & 4.349 & 9.978 & 2.29$\times$ & 1.77$\times$ & 1.70$\times$ \\
+4 & 2.403 & 5.225 & 2.17$\times$ & 3.20$\times$ & 3.24$\times$ \\
+6 & 1.714 & 3.637 & 2.12$\times$ & 4.49$\times$ & 4.66$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \textbf{MPI is faster at every size, but the gap narrows as the system widens}: on the
-10M-record input MapReduce takes 2.27$\times$ as long as MPI on one node and
-2.01$\times$ on 6. MapReduce in fact scales slightly better over
+10M-record input MapReduce takes 2.20$\times$ as long as MPI on one node and
+2.12$\times$ on 6. MapReduce in fact scales slightly better over
 this range ($4.68\times$ against MPI's $4.14\times$), because its larger constant costs
 are the part that parallelises, while MPI's final \texttt{MPI\_Reduce} does not. On the
 100k-record input the two are indistinguishable (within $4\%$), since neither is doing
@@ -328,8 +328,8 @@ enough work for the difference to show. This is the expected outcome: MPI perfor
 no shuffle, no sort, no serialisation to text and no process creation per stage. It
 holds its state in memory and reduces once at the end.
 
-\textbf{The two scale comparably} --- 4.14$\times$ and
-4.67$\times$ respectively at 6 nodes --- so the parallel
+\textbf{The two scale comparably} --- 4.49$\times$ and
+4.66$\times$ respectively at 6 nodes --- so the parallel
 decomposition is equally effective in both, and MapReduce's slight edge comes from
 having more parallelisable overhead to begin with. The difference in absolute speed is
 therefore a constant factor, which makes it worth identifying where that constant comes
@@ -460,9 +460,9 @@ separate machines.
 \begin{tabular}{@{}lrr@{}}
 \toprule
 \textbf{Workers} & \textbf{records/s} & \textbf{Speedup} \\ \midrule
-1 & 799,329 & 1.00$\times$ \\
-2 & 1,555,611 & 1.95$\times$ \\
-4 & 2,999,449 & 3.75$\times$ \\
+1 & 825,306 & 1.00$\times$ \\
+2 & 1,560,223 & 1.89$\times$ \\
+4 & 2,904,735 & 3.52$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -473,9 +473,9 @@ separate machines.
 \begin{tabular}{@{}lrr@{}}
 \toprule
 \textbf{Strategy} & \textbf{records/s} & \textbf{Relative} \\ \midrule
-\texttt{round\_robin} & 2,999,449 & 1.00$\times$ \\
-\texttt{least\_loaded} & 2,285,566 & 0.76$\times$ \\
-\texttt{hash\_server} & 220,454 & 0.07$\times$ \\
+\texttt{round\_robin} & 2,904,735 & 1.00$\times$ \\
+\texttt{least\_loaded} & 1,833,523 & 0.63$\times$ \\
+\texttt{hash\_server} & 222,443 & 0.08$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -487,11 +487,11 @@ separate machines.
 \begin{tabular}{@{}rrrr@{}}
 \toprule
 \textbf{Records per message} & \textbf{Messages per million} & \textbf{records/s} & \textbf{Relative} \\ \midrule
-1 & 1,000,000 & 10,126 & 1$\times$ \\
-10 & 100,000 & 99,549 & 10$\times$ \\
-100 & 10,000 & 844,397 & 83$\times$ \\
-1,000 & 1,000 & 2,999,449 & 296$\times$ \\
-10,000 & 100 & 3,104,559 & 307$\times$ \\
+1 & 1,000,000 & 10,201 & 1$\times$ \\
+10 & 100,000 & 99,282 & 10$\times$ \\
+100 & 10,000 & 834,785 & 82$\times$ \\
+1,000 & 1,000 & 2,904,735 & 285$\times$ \\
+10,000 & 100 & 3,122,858 & 306$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -502,19 +502,19 @@ no pause between them, which is the most demanding pattern possible.
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
 \textbf{Query clients} & \textbf{Ingest (rec/s)} & \textbf{Change} & \textbf{Queries/s} & \textbf{p50 (ms)} & \textbf{p99 (ms)} \\ \midrule
-none & 2,999,449 & --- & --- & --- & --- \\
-1 & 2,371,485 & -21\% & 49.8 & 21.317 & 25.297 \\
-4 & 807,953 & -73\% & 146.1 & 30.302 & 41.806 \\
-16 & 204,572 & -93\% & 153.5 & 113.811 & 181.138 \\
+none & 2,904,735 & --- & --- & --- & --- \\
+1 & 2,388,961 & -18\% & 51.1 & 20.207 & 31.674 \\
+4 & 779,990 & -73\% & 143.0 & 30.879 & 42.488 \\
+16 & 197,263 & -93\% & 146.5 & 119.644 & 191.546 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{Scaling is near linear to four workers} (3.75$\times$), because workers
+\textbf{Scaling is near linear to four workers} (3.52$\times$), because workers
 share no state and require no coordination. The shortfall from a perfect $4\times$ is
 attributable to the coordinator, through which every record must pass.
 
-\textbf{Message granularity is the dominant parameter}, worth 296$\times$
+\textbf{Message granularity is the dominant parameter}, worth 285$\times$
 between one record per message and one thousand. Up to a batch of 100 the throughput
 rises almost exactly tenfold for each tenfold increase in batch size, which identifies
 the cost as \emph{per message} rather than per record: framing, a handler iteration, a
@@ -554,6 +554,34 @@ timer, trading a bounded amount of staleness for throughput.
 \caption{Streaming analytics. Throughput against worker count; the effect of message
 granularity, which spans more than two orders of magnitude; the comparison of routing
 strategies; and the cost of concurrent queries during ingestion.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{q2_facts.png}
+\caption{Each claim made about the streaming system, set against the measurement that
+supports it. Workers scale at $3.54\times$ on four machines against a linear ideal of
+$4\times$; message granularity is worth $285\times$ between one record per message and a
+thousand; routing evenly beats hashing by server identifier by $13\times$, because hashing
+sends every record for a busy server to the same worker; and queries are genuinely served
+during ingestion, but sixteen concurrent query clients cost $15\times$ the ingest rate
+while p99 query latency rises from $32$ to $192$\,ms.}
+\end{figure}
+
+\subsection{The three paradigms side by side}
+All three implementations compute the same analytics over the same 1,000,000-record file
+on four machines, so their rates can be placed on one axis.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{paradigm_compare.png}
+\caption{MapReduce, MPI and gRPC on identical work. The ordering is not a ranking of the
+technologies: MapReduce and MPI read the file from disk and terminate, whereas the gRPC
+system receives records over the network and continues answering queries throughout, and
+its figure excludes reading the file because a real stream has none to read. What the
+comparison does show is that the streaming design pays no penalty for being incremental
+--- it is not slower than the batch systems despite maintaining queryable state at all
+times.}
 \end{figure}
 
 \section{Food Ordering System with gRPC}
@@ -653,7 +681,7 @@ $2.8\times$ slower also makes it use $39\times$ less memory, and that reduction 
 permits the work to be divided among mappers that each observe only part of the input.
 
 \textbf{Message granularity dominated the streaming system.} Varying the batch size
-changed throughput by a factor of 296, far exceeding the effect of the worker
+changed throughput by a factor of 285, far exceeding the effect of the worker
 count or the routing strategy. Where a cost is incurred per message rather than per
 record, aggregation into larger messages is the most effective optimisation available.
 

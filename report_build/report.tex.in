@@ -533,6 +533,34 @@ granularity, which spans more than two orders of magnitude; the comparison of ro
 strategies; and the cost of concurrent queries during ingestion.}
 \end{figure}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{q2_facts.png}
+\caption{Each claim made about the streaming system, set against the measurement that
+supports it. Workers scale at $3.54\times$ on four machines against a linear ideal of
+$4\times$; message granularity is worth $285\times$ between one record per message and a
+thousand; routing evenly beats hashing by server identifier by $13\times$, because hashing
+sends every record for a busy server to the same worker; and queries are genuinely served
+during ingestion, but sixteen concurrent query clients cost $15\times$ the ingest rate
+while p99 query latency rises from $32$ to $192$\,ms.}
+\end{figure}
+
+\subsection{The three paradigms side by side}
+All three implementations compute the same analytics over the same 1,000,000-record file
+on four machines, so their rates can be placed on one axis.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{paradigm_compare.png}
+\caption{MapReduce, MPI and gRPC on identical work. The ordering is not a ranking of the
+technologies: MapReduce and MPI read the file from disk and terminate, whereas the gRPC
+system receives records over the network and continues answering queries throughout, and
+its figure excludes reading the file because a real stream has none to read. What the
+comparison does show is that the streaming design pays no penalty for being incremental
+--- it is not slower than the batch systems despite maintaining queryable state at all
+times.}
+\end{figure}
+
 \section{Food Ordering System with gRPC}
 
 \subsection{Structure}

@@ -20,10 +20,14 @@
 # the "speedup" would measure the scheduler, not the program.
 #
 # Seven, not eight, because node08 is drained and an 8-node job would queue for
-# ever. At p=8 one machine therefore runs two map tasks; --cpus-per-task=8 gives
-# it enough real cores that the two do not fight over one, so the point is still
-# meaningful, but it is the only point in the sweep that is not strictly one
-# task per machine.
+# ever. The sweep is therefore 1, 2, 4, 7 rather than 1, 2, 4, 8.
+#
+# Do NOT put 8 back while only 7 nodes are usable. The allocation grants one
+# task slot per node, so `srun --ntasks=8` across 7 nodes silently starts only
+# SEVEN tasks: the eighth chunk is never mapped, and the pipeline then produces
+# a wrong answer FASTER than the correct one, which looks like a good result.
+# Job 99808 did exactly this - every p=8 run came out wrong. The check below
+# now catches it instead of relying on the output comparison.
 #
 # Output: perf_results/scaling.csv - one row per run, timed per stage.
 
@@ -33,7 +37,7 @@ WORK=$PWD/perf_results/work_$$
 mkdir -p "$WORK"
 
 REPEATS=${REPEATS:-3}
-TASKS_LIST=${TASKS_LIST:-"1 2 4 8"}
+TASKS_LIST=${TASKS_LIST:-"1 2 4 7"}
 
 CSV=perf_results/scaling.csv
 echo "size,rows_A,cols_A,rows_B,cols_B,tasks,run,mapper_s,shuffle1_s,combiner_s,shuffle2_s,reducer_s,total_s,correct" > "$CSV"
@@ -86,6 +90,18 @@ for ENTRY in "${CASES[@]}"; do
             T0=$(now)
             run_tasks "$T" "[ -s $WORK/chunk_\$TID ] && MATRIX_B_FILE='$B_FILE' python3 $PWD/mapper.py < $WORK/chunk_\$TID > $WORK/map_\$TID.out || touch $WORK/map_\$TID.out"
             T1=$(now)
+
+            # Every chunk must have produced a map output. If srun quietly ran
+            # fewer tasks than asked, a chunk goes unmapped and the answer is
+            # wrong but fast - so stop rather than record a misleading row.
+            NCHUNK=$(ls "$WORK"/chunk_* 2>/dev/null | wc -l)
+            NMAP=$(ls "$WORK"/map_*.out 2>/dev/null | wc -l)
+            if [ "$NCHUNK" -ne "$NMAP" ]; then
+                echo "  !! $LABEL tasks=$T run=$RUN: $NCHUNK chunks but $NMAP map outputs."
+                echo "     srun could not start $T tasks in this allocation - skipping."
+                continue
+            fi
+
             run_tasks "$T" "sort -k1,1 $WORK/map_\$TID.out > $WORK/shuf1_\$TID.out"
             T2=$(now)
             run_tasks "$T" "python3 $PWD/combiner.py < $WORK/shuf1_\$TID.out > $WORK/comb_\$TID.out"

@@ -32,9 +32,19 @@ import time
 
 import grpc
 
+# HERE is the Q2_grpc folder: this file lives in Q2_grpc/scripts/.
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(HERE, "Q2_grpc", "src")
-BIN = os.path.join(HERE, "bin")
+SRC = os.path.join(HERE, "src")
+
+# Three things live outside Q2, one level up in Section2, and are shared with Q1
+# on purpose: the datasets (both questions must measure the same bytes), the
+# hand-written test inputs, and log_seq, the HW2 sequential program that is the
+# single correctness oracle for both questions. Q1 builds log_seq; Q2 only runs
+# it.
+SECTION2 = os.path.dirname(HERE)
+BIN = os.path.join(SECTION2, "Q1_mapreduce", "bin")
+DATA = os.path.join(SECTION2, "data")
+TESTS = os.path.join(SECTION2, "Q1_mapreduce", "tests")
 PYTHON = os.environ.get("PY", sys.executable)
 
 STRATEGIES = ("round_robin", "least_loaded", "hash_server")
@@ -333,11 +343,11 @@ def main():
     args = ap.parse_args()
 
     if not os.path.exists(os.path.join(BIN, "log_seq")):
-        raise SystemExit("bin/log_seq missing - run: make tools")
+        raise SystemExit("log_seq missing at %s\nbuild it with: (cd ../Q1_mapreduce && make)" % BIN)
 
     suite = Suite()
-    tests = sorted(os.path.join(HERE, "tests", f)
-                   for f in os.listdir(os.path.join(HERE, "tests")) if f.endswith(".in"))
+    tests = sorted(os.path.join(TESTS, f)
+                   for f in os.listdir(TESTS) if f.endswith(".in"))
 
     print("Q2 correctness: query_client --final vs bin/log_seq")
     for dataset in tests:
@@ -346,7 +356,7 @@ def main():
                 case(suite, dataset, workers, strategy, 1)
 
     for name in ("tiny", "small"):
-        dataset = os.path.join(HERE, "data", "%s.in" % name)
+        dataset = os.path.join(DATA, "%s.in" % name)
         if not os.path.exists(dataset):
             continue
         for workers in (1, 2, 3):
@@ -354,12 +364,12 @@ def main():
                 case(suite, dataset, workers, strategy, 1000)
 
     if args.full:
-        medium = os.path.join(HERE, "data", "medium.in")
+        medium = os.path.join(DATA, "medium.in")
         if os.path.exists(medium):
             case(suite, medium, 3, "round_robin", 5000)
             case(suite, medium, 4, "hash_server", 1000)
 
-    small = os.path.join(HERE, "data", "small.in")
+    small = os.path.join(DATA, "small.in")
     if os.path.exists(small):
         k_case(suite, small, 3)
         multi_source_case(suite, small)

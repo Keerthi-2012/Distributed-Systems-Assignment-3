@@ -104,35 +104,38 @@ records to a few thousand pairs.
 
 ### 2.2 Scaling
 
-10M records (`large.in`, 396 MB), map tasks placed **one per node** across a
-4-node allocation with `--cpus-per-task=8`, mean of 2 runs, every run checked
-against `log_seq` (24 of 24 matched):
+10M records (`large.in`, 396 MB), map tasks placed **one per node**, sweeping
+1, 2, 4 and 6 nodes with `--cpus-per-task=8`, median of 3 runs, every run
+checked against `log_seq` (**36 of 36 matched**). Slurm job 99819.
 
-| Map tasks | Total | Map | Sort | Combine | Gather+sort | Reduce | Speedup |
+| Nodes | Total | Map | Sort | Combine | Gather+sort | Reduce | Speedup |
 | --------: | ----: | --: | ---: | ------: | ----------: | -----: | ------: |
-| 1 | 16.127 s | 15.535 | 0.210 | 0.167 | 0.145 | 0.070 | 1.00× |
-| 2 | 9.383 s | 8.872 | 0.154 | 0.131 | 0.156 | 0.070 | 1.72× |
-| 4 | 4.922 s | 4.453 | 0.122 | 0.108 | 0.165 | 0.074 | **3.28×** |
-| 8 | 5.182 s | 4.469 | 0.221 | 0.209 | 0.203 | 0.080 | 3.11× |
+| 1 | 16.940 s | 16.351 | 0.218 | 0.173 | 0.141 | 0.069 | 1.00× |
+| 2 | 9.985 s | 9.478 | 0.160 | 0.124 | 0.152 | 0.071 | 1.70× |
+| 4 | 5.231 s | 4.760 | 0.122 | 0.111 | 0.164 | 0.073 | 3.24× |
+| 6 | 3.637 s | 3.172 | 0.114 | 0.102 | 0.174 | 0.075 | **4.66×** |
 
 Smaller inputs:
 
-| Dataset | Records | 1 task | 2 | 4 | 8 |
+| Dataset | Records | 1 node | 2 | 4 | 6 |
 | ------- | ------: | -----: | -: | -: | -: |
-| small | 100,000 | 0.342 s | 0.318 s | 0.296 s | 0.599 s |
-| medium | 1,000,000 | 1.701 s | 1.095 s | 0.696 s | 1.026 s |
-| large | 10,000,000 | 16.127 s | 9.383 s | 4.922 s | 5.182 s |
+| small | 100,000 | 0.349 s | 0.301 s | 0.295 s | 0.288 s |
+| medium | 1,000,000 | 1.795 s | 1.184 s | 0.741 s | 0.586 s |
+| large | 10,000,000 | 16.940 s | 9.985 s | 5.231 s | 3.637 s |
 
 **Observations**
 
 - **The map stage is the whole job and it is CPU-bound, not I/O-bound.** On
-  `large` at one task, map is **15.5 s of 16.1 s — 96%**. Measured directly on a
+  `large` at one node, map is **16.35 s of 16.94 s — 97%**. Measured directly on a
   compute node, reading the 397 MB input with `cat` takes **0.26 s**, while the
   mapper takes **13.26 s of which 13.16 s is user CPU**. The cost is parsing
   10M lines, not fetching them.
-- **Four tasks is the ceiling, and the reason is hyperthreads.** Speedup tracks
-  the map stage to 4 tasks (1.72×, 3.28×) and then stops: 8 tasks leaves the map
-  stage unchanged (4.453 s → 4.469 s). The nodes are 2× Xeon Gold 5317 — 24
+- **Speedup tracks the map stage across the whole sweep.** 1.70×, 3.24×, 4.66×
+  on 1→2→4→6 nodes, against a linear ideal of 6×, and the map stage falls from
+  16.35 s to 3.17 s. Every added task is a whole machine, so there is no point
+  at which adding one stops helping. An earlier sweep packed 8 tasks onto 4
+  nodes and appeared to plateau; that was hyperthread contention, not the
+  decomposition. The nodes are 2× Xeon Gold 5317 — 24
   physical cores, 48 logical, siblings at stride 24. With 8 tasks on 4 nodes,
   Slurm places two tasks per node and on some of them the pair lands on sibling
   threads of **one** physical core (observed: cpus 1 and 25, which
