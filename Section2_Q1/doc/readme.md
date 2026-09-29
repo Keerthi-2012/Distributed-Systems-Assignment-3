@@ -142,10 +142,10 @@ as the oracle.
 
 | Nodes | Total | Map | Sort | Combine | Gather | Reduce | Speedup |
 | ----: | ----: | --: | ---: | ------: | -----: | -----: | ------: |
-| 1 | 16.940 s | 16.351 | 0.218 | 0.173 | 0.141 | 0.069 | 1.00× |
-| 2 | 9.985 s | 9.478 | 0.160 | 0.124 | 0.152 | 0.071 | 1.70× |
-| 4 | 5.231 s | 4.760 | 0.122 | 0.111 | 0.164 | 0.073 | 3.24× |
-| 6 | 3.637 s | 3.172 | 0.114 | 0.102 | 0.174 | 0.075 | **4.66×** |
+| 1 | 18.044 s | 17.456 | 0.222 | 0.162 | 0.146 | 0.070 | 1.00× |
+| 2 | 10.321 s | 9.795 | 0.162 | 0.134 | 0.158 | 0.072 | 1.75× |
+| 4 | 5.273 s | 4.800 | 0.124 | 0.104 | 0.169 | 0.075 | 3.42× |
+| 6 | 3.736 s | 3.258 | 0.114 | 0.105 | 0.179 | 0.077 | **4.83×** |
 
 **The map stage is the job.** 16.35 s of 16.94 s — 97%. And it is CPU-bound, not
 I/O-bound: reading the same file with `cat` takes 0.26 s, while the mapper takes
@@ -166,13 +166,13 @@ The same analytics written with MPI, on the same machines, one process each:
 
 | Nodes | MPI | MapReduce | MapReduce is |
 | ----: | --: | --------: | -----------: |
-| 1 | 7.441 s | 16.940 s | 2.28× slower |
-| 2 | 4.356 s | 9.985 s | 2.29× slower |
-| 4 | 2.401 s | 5.231 s | 2.18× slower |
-| 6 | 1.701 s | 3.637 s | 2.14× slower |
+| 1 | 7.740 s | 18.044 s | 2.33× slower |
+| 2 | 4.654 s | 10.321 s | 2.22× slower |
+| 4 | 2.527 s | 5.273 s | 2.09× slower |
+| 6 | 1.777 s | 3.736 s | 2.10× slower |
 
 MPI is faster everywhere, but **the gap narrows** as machines are added, and
-MapReduce actually scales slightly better (4.66× against MPI's 4.37×) because
+MapReduce actually scales slightly better (4.83× against MPI's 4.37×) because
 its larger constant costs are the part that parallelises.
 
 The constant factor comes from how state is represented, not from MapReduce:

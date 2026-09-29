@@ -1,4 +1,4 @@
 dataset,workers,strategy,batch_size,query_clients,query_mode,run,queries,qps,p50_ms,p95_ms,p99_ms
-medium,4,round_robin,1000,1,fresh,1,15341,51.1,20.207,24.004,31.674
-medium,4,round_robin,1000,4,fresh,1,42909,143.0,30.879,38.899,42.488
-medium,4,round_robin,1000,16,fresh,1,43971,146.5,119.644,163.227,191.546
+medium,4,round_robin,1000,1,fresh,1,15373,51.2,20.082,25.097,43.211
+medium,4,round_robin,1000,4,fresh,1,44004,146.7,30.215,38.045,41.673
+medium,4,round_robin,1000,16,fresh,1,46302,154.3,113.318,152.444,178.33

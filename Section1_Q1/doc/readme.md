@@ -93,14 +93,14 @@ differently never changes the answer** — all 36 of its runs matched.
 
 From `results/scaling.csv`, median of 3 runs, one task per machine:
 
-| Input | 1 node | 2 nodes | 4 nodes | 7 nodes | Speedup at 7 |
+| Input | 1 node | 2 nodes | 4 nodes | 6 nodes | Speedup at 6 |
 | ----- | ------ | ------- | ------- | ------- | ------------ |
-| Small (100×50) | 0.414 s | 0.353 s | 0.355 s | 0.326 s | **1.27×** |
-| Medium (500×50) | 1.141 s | 0.720 s | 0.529 s | 0.446 s | **2.56×** |
-| Large (2000×50) | 3.801 s | 2.140 s | 1.274 s | 0.918 s | **4.14×** |
+| Small (100×50) | 0.412 s | 0.358 s | 0.354 s | 0.325 s | **1.27×** |
+| Medium (500×50) | 1.165 s | 0.753 s | 0.540 s | 0.469 s | **2.48×** |
+| Large (2000×50) | 3.811 s | 2.264 s | 1.326 s | 1.012 s | **3.77×** |
 
 The pattern is the point: **the bigger the input, the better it scales.** Large
-reaches 4.14× on 7 machines (59% efficiency), while Small barely moves at 1.27×
+reaches 3.77× on 6 machines (63% efficiency), while Small barely moves at 1.27×
 (18% efficiency). Every run has a fixed cost — starting Python on each node,
 reading all of B, five stages of process startup — and that cost does not shrink
 when you add machines. On a 100×50 matrix there is so little real work that the

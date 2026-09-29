@@ -1,5 +1,5 @@
 Q2 correctness: query_client --final vs bin/log_seq
-date: 2026-09-29 14:13:13
+date: 2026-09-29 15:12:09
 
 PASS  edge_empty.in W=1 round_robin batch=1
 PASS  edge_empty.in W=1 least_loaded batch=1
@@ -75,7 +75,7 @@ PASS  small.in W=3 least_loaded batch=1000
 PASS  small.in W=3 hash_server batch=1000
 PASS  small.in query-time K=3
 PASS  3 concurrent sources -> 300000 records (want 300000)
-PASS  8 live snapshots consistent (7 mid-stream)
+PASS  6 live snapshots consistent (5 mid-stream)
 PASS  small.in final after live queries
 
 passed 76, failed 0

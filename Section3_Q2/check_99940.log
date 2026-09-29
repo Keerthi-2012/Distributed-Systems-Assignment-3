@@ -1,0 +1,10 @@
+==========================================
+SLURM_JOB_ID = 99940
+SLURM_NODELIST = node06
+SLURM_JOB_GPUS = 
+==========================================
+restaurants: ['Pizza House', 'Burger Point']
+order O1 total 500
+final READY
+20 concurrent orders -> 20 unique ids
+10 trackers -> server still responds in 0.00s
