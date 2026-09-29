@@ -7,6 +7,10 @@ advance their status. Built with gRPC, Python 3.
 Section 3 of the assignment offers two problems — Collaborative Document Editing
 and this one. **This is Problem 2.**
 
+Every transcript below is real output, captured from a run of this code. Order
+ids are handed out in order from a freshly started server, so if you follow the
+steps from a fresh `server.py` you will see exactly these ids.
+
 Full command reference, including the cluster: **[run.md](run.md)**.
 
 ---
@@ -48,8 +52,9 @@ On RCE the system `python3` is 3.6 and too old for grpcio — use
 | `ListRestaurants` | unary | the restaurants and their menus |
 | `PlaceOrder` | unary | place an order, returns a unique id |
 | `GetOrderStatus` | unary | the current status of an order |
-| `UpdateOrderStatus` | unary | a restaurant advances an order |
+| `UpdateOrderStatus` | unary | a restaurant advances an order, or a customer cancels |
 | `SubscribeToOrderUpdates` | **server-streaming** | a customer is pushed every status change |
+| `ListRestaurantOrders` | unary | a restaurant lists its own orders (extra, beyond the required five) |
 
 ### Order states
 
@@ -64,15 +69,19 @@ still `PLACED`; once a restaurant has accepted it, cancelling is refused.
 
 ---
 
-## 4. Running the demonstration
+## 4. Starting the system
 
-Three terminals. The server address is a command-line argument, as the
-assignment specifies.
+The server address is a command-line argument, as the assignment specifies.
+Use three terminals.
 
 **Terminal A — server**
 
 ```bash
 python3 server.py localhost:50051
+```
+
+```
+Server listening on localhost:50051
 ```
 
 **Terminal B — customer**
@@ -81,83 +90,226 @@ python3 server.py localhost:50051
 python3 customer.py localhost:50051
 ```
 
+It asks for a customer id once, then shows the menu before every choice:
+
 ```
-1. List Restaurants   2. Place Order   3. Check Order Status
-4. Track Order        5. Cancel Order  6. Exit
+Enter customer ID: C1
+
+1. List Restaurants
+2. Place Order
+3. Check Order Status
+4. Track Order
+5. Cancel Order
+6. Exit
+
+Choose an option:
 ```
 
-**Terminal C — restaurant** (its name is the second argument, so it sees only
-its own orders)
+**Terminal C — restaurant.** The restaurant's name is the second argument, so a
+client sees and controls only its own orders.
 
 ```bash
 python3 restaurant.py localhost:50051 "Pizza House"
 ```
 
 ```
-1. View Pending Orders   2. Accept Order   3. Start Preparing
-4. Mark Ready            5. Exit
+1. View Pending Orders
+2. Accept Order
+3. Start Preparing
+4. Mark Ready
+5. Exit
+
+Choose an option:
 ```
 
-### The six required demonstrations
+---
 
-**1. Listing restaurants** — Terminal B, option `1`:
+## 5. The six required demonstrations
+
+The menu block is reprinted before every prompt; below it is shown once and then
+left out, so the transcripts stay readable.
+
+### 5.1 Listing restaurants
+
+Terminal B, option `1`:
 
 ```
+Choose an option: 1
+
 Pizza House
-  Margherita Pizza - 250
-  Farmhouse Pizza  - 350
-  Garlic Bread     - 150
+  - Margherita Pizza : 250
+  - Farmhouse Pizza : 350
+  - Garlic Bread : 150
+
 Burger Point
-  Veg Burger    - 180
-  Cheese Burger - 220
-  French Fries  - 120
+  - Veg Burger : 180
+  - Cheese Burger : 220
+  - French Fries : 120
 ```
 
-**2. Placing an order** — Terminal B, option `2`:
+### 5.2 Placing an order
+
+Terminal B, option `2`. Items are entered one at a time; a blank food name ends
+the order. The server prices it and returns a unique id.
 
 ```
+Choose an option: 2
 Restaurant name: Pizza House
 Food item (blank to finish): Margherita Pizza
 Quantity: 2
+Food item (blank to finish): Garlic Bread
+Quantity: 1
 Food item (blank to finish):
-→ Order O1 placed, total 500, status PLACED
+Order placed. Order ID: O1, Total: 650, Status: PLACED
 ```
 
-**3. A restaurant processing the order** — Terminal C, option `1` shows the new
-order; then `2` (Accept), `3` (Start Preparing), `4` (Mark Ready), entering `O1`
-each time.
+650 is `250 x 2 + 150 x 1`, computed on the server from its own menu — the
+client never sends a price.
 
-**4. A customer receiving real-time updates** — before step 3, Terminal B,
-option `4`, order id `O1`. That terminal then prints each change **as the
-restaurant makes it**, without asking:
+Option `3` reads the status back:
 
 ```
-[update] O1 -> ACCEPTED
-[update] O1 -> PREPARING
-[update] O1 -> READY
+Choose an option: 3
+Order ID: O1
+Order O1 : PLACED
 ```
 
-This is `SubscribeToOrderUpdates`, the server-streaming RPC. Nothing polls.
+### 5.3 A restaurant receiving and processing the order
 
-**5. Two clients interacting concurrently** — open a fourth terminal with a
-second customer and place an order while the first is still tracking. Both are
-served at once, and the order ids differ.
+Terminal C. Option `1` lists the orders belonging to this restaurant:
 
-**6. Exception cases with gRPC status codes**
+```
+Choose an option: 1
+Order O1 : PLACED (Total: 650)
+Order O2 : PLACED (Total: 350)
+```
 
-| Do this | Result |
-| ------- | ------ |
-| Place an order at `Nonexistent Cafe` | `NOT_FOUND` — restaurant not found |
-| Order `Sushi` from Pizza House | `NOT_FOUND` — item not available |
-| Check status of order `ZZZ` | `NOT_FOUND` — order not found |
-| From Burger Point's terminal, update a Pizza House order | `PERMISSION_DENIED` |
-| Mark an order `READY` while still `PLACED` | `FAILED_PRECONDITION` |
-| Cancel an order already `ACCEPTED` | `FAILED_PRECONDITION` |
+Options `2`, `3` and `4` walk the order forward, each asking for the id:
 
-The three codes carry different meanings: `NOT_FOUND` says the thing does not
-exist, `PERMISSION_DENIED` says it exists but is not yours, and
-`FAILED_PRECONDITION` says it exists and is yours but the system is in the wrong
-state. A client can act differently on each.
+```
+Choose an option: 2
+Order ID: O2
+Order O2 : ACCEPTED
+
+Choose an option: 3
+Order ID: O2
+Order O2 : PREPARING
+
+Choose an option: 4
+Order ID: O2
+Order O2 : READY
+```
+
+### 5.4 A customer receiving real-time updates
+
+This is the important one. **Before** the restaurant does anything, the customer
+chooses option `4` and gives the order id:
+
+```
+Choose an option: 4
+Order ID: O2
+Tracking order O2...
+```
+
+Tracking runs on a background thread, so the customer menu stays usable. As the
+restaurant performs the three updates in 5.3, this terminal prints each one **by
+itself**, with nothing typed:
+
+```
+[Update] Order O2 : ACCEPTED
+
+[Update] Order O2 : PREPARING
+
+[Update] Order O2 : READY
+```
+
+That is `SubscribeToOrderUpdates`, the server-streaming RPC. The customer asked
+once; the server pushed three messages over the one open stream. Nothing polls,
+and the stream closes on its own when the order reaches `READY` or `CANCELLED`.
+
+### 5.5 Two clients interacting concurrently
+
+Open a fourth terminal with a second customer and order while the first is still
+tracking. Both are served at once and the ids differ.
+
+Pushed harder — 20 customers placing orders at the same instant:
+
+```
+20 customers ordered at the same time
+  unique order ids : 20 of 20
+```
+
+No two customers were given the same id, because the id counter and the order
+table are only ever touched while holding the server's lock.
+
+And with many customers tracking at once, the server still answers ordinary
+calls immediately:
+
+```
+40 customers tracking orders at the same time
+  ListRestaurants still answered in 0.00 s (2 restaurants)
+```
+
+That second check is not decoration — see the thread-pool note in §6.
+
+### 5.6 Exception cases with gRPC status codes
+
+Each line below is the real error, captured from the running server:
+
+```
+order from 'Nonexistent Cafe'              -> NOT_FOUND: Restaurant not found
+order 'Sushi' from Pizza House             -> NOT_FOUND: Item not available: Sushi
+status of unknown order ZZZ                -> NOT_FOUND: Order not found
+track an unknown order YYY                 -> NOT_FOUND: Order not found
+Burger Point updates a Pizza House order   -> PERMISSION_DENIED: Order belongs to another restaurant
+mark O1 READY while still PLACED           -> FAILED_PRECONDITION: Invalid order state transition
+cancel an order already READY              -> FAILED_PRECONDITION: Invalid order state transition
+```
+
+To reproduce them from the CLIs:
+
+| Do this | Where | Result |
+| ------- | ----- | ------ |
+| Place an order at `Nonexistent Cafe` | customer, option 2 | `NOT_FOUND` |
+| Order `Sushi` from Pizza House | customer, option 2 | `NOT_FOUND` |
+| Check status of order `ZZZ` | customer, option 3 | `NOT_FOUND` |
+| Track order `YYY` | customer, option 4 | `NOT_FOUND` |
+| From Burger Point's terminal, update a Pizza House order | restaurant, option 2 | `PERMISSION_DENIED` |
+| Mark an order `READY` while still `PLACED` | restaurant, option 4 | `FAILED_PRECONDITION` |
+| Cancel an order already accepted | customer, option 5 | `FAILED_PRECONDITION` |
+
+The client prints them as `[Error] CODE: details`, for example:
+
+```
+Choose an option: 2
+Restaurant name: Nonexistent Cafe
+Food item (blank to finish): Veg Burger
+Quantity: 1
+Food item (blank to finish):
+[Error] NOT_FOUND: Restaurant not found
+```
+
+The three codes mean different things, and a client can act differently on each:
+`NOT_FOUND` says the thing does not exist, `PERMISSION_DENIED` says it exists but
+is not yours, and `FAILED_PRECONDITION` says it exists and is yours but the
+system is in the wrong state to do that now.
+
+**Cancellation**, for contrast, is allowed from `PLACED` and succeeds — customer
+option `5`:
+
+```
+Choose an option: 5
+Order ID: O3
+Restaurant name: Burger Point
+Order O3 : CANCELLED
+
+Choose an option: 3
+Order ID: O3
+Order O3 : CANCELLED
+```
+
+Trying the same thing once the restaurant has accepted the order gives
+`FAILED_PRECONDITION`, which is the last row of the table above.
 
 ### On the cluster
 
@@ -168,12 +320,13 @@ a port that will not collide with other students, are in
 
 ---
 
-## 5. Design notes
+## 6. Design notes
 
-**Concurrency.** All shared state — the order table and the subscriber lists —
-is protected by a single lock. The critical sections are a dictionary lookup and
-an assignment, so one lock costs nothing; per-order locks would add a way to
-deadlock in exchange for contention that does not exist at this scale.
+**Concurrency.** All shared state — the order table, the id counter and the
+subscriber lists — is protected by a single lock. The critical sections are a
+dictionary lookup and an assignment, so one lock costs nothing; per-order locks
+would add a way to deadlock in exchange for contention that does not exist at
+this scale. The 20-of-20 unique ids in §5.5 is this lock being measured.
 
 **Notifications go out outside the lock.** Each subscriber has its own queue.
 The handler copies the subscriber list while holding the lock, releases it, and
@@ -192,8 +345,8 @@ stopped answering anything — `ListRestaurants` returned `DEADLINE_EXCEEDED`.
 Every individual operation was correct; it failed only when enough clients did a
 legitimate thing at once. The queue is now waited on with a one-second timeout
 inside a loop that re-checks whether the client is still connected, and the pool
-is 64 workers. Forty simultaneous trackers now leave the server responding
-immediately.
+is 64 workers. That is what the 40-tracker measurement in §5.5 is checking, and
+it now answers in 0.00 s.
 
 **`ListRestaurantOrders`** is an extra RPC beyond the specified five, added so a
 restaurant client can list its own pending orders without tracking state itself.
