@@ -38,24 +38,36 @@ rsync -avz --exclude data --exclude bin --exclude logs --exclude results \
 
 Then on the RCE **login node**:
 
+Each question sets itself up, in its own folder.
+
 ```bash
 ssh <your-username>@rce.iiit.ac.in
-cd ~/HW3/Section2
-bash scripts/rce_setup.sh
-```
 
-`rce_setup.sh` does four things:
+# Q1 - C++. Also builds the datasets, which both questions read.
+cd ~/HW3/Section2/Q1_mapreduce
+make                            # bin/{mapper,combiner,reducer,log_seq,gen_dataset}
+bash scripts/make_data.sh       # ../data/{tiny,small,medium,large}.in
+
+# Q2 - Python.
+cd ~/HW3/Section2/Q2_grpc
+bash scripts/setup_python.sh    # virtualenv + grpcio + the gRPC stubs
+```
 
 | Step | Why |
 | ---- | --- |
-| `make` — builds `bin/mapper`, `bin/combiner`, `bin/reducer`, `bin/log_seq`, `bin/gen_dataset` | Q1 is C++ and needs nothing else |
-| creates `~/HW3/venv` from Python 3.12 | RCE's default `python3` is **3.6**, too old for grpcio |
-| installs grpcio and generates the gRPC stubs | the generated code must match the installed grpcio version, so it is generated here rather than shipped |
-| `scripts/make_data.sh` — builds `data/{tiny,small,medium,large}.in` | fixed seeds, so the files are identical every time |
+| `make` in `Q1_mapreduce` | Q1 is C++ and needs nothing but `g++` |
+| `scripts/make_data.sh` | fixed seeds, so `data/` is byte-identical every time; the checksums are recorded in `Q1_mapreduce/results/dataset_md5.txt` |
+| `setup_python.sh` creates `~/HW3/venv` from Python 3.12 | RCE's default `python3` is **3.6**, too old for grpcio |
+| it then generates the gRPC stubs | the generated code must match the installed grpcio version, so it is generated here rather than shipped |
+
+The datasets sit in `Section2/data/`, one level above both questions, because the
+report compares Q1 and Q2 on **the same bytes** — a separate copy per question
+could silently drift apart. `make_data.sh` builds `bin/log_mpi` too if you first
+`module load openmpi/4.1.5 && make mpi`.
 
 Home is shared by every compute node, so one setup serves them all.
 
-> **After changing `Q2_grpc/proto/loganalytics.proto`, re-run `bash scripts/rce_setup.sh`.**
+> **After changing `Q2_grpc/proto/loganalytics.proto`, re-run `bash Q2_grpc/scripts/setup_python.sh`.**
 > Otherwise the servers use stale stubs and the clients fail with
 > `Method not found`.
 
@@ -84,15 +96,15 @@ shape as the course's `Mapreduce_distributed.sh`.
 
 ```bash
 salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:20:00
-cd ~/HW3/Section2
-./bin/mapper < data/small.in | sort | ./bin/combiner | sort | ./bin/reducer
+cd ~/HW3/Section2/Q1_mapreduce
+./bin/mapper < ../data/small.in | sort | ./bin/combiner | sort | ./bin/reducer
 ```
 
 Compare it with the sequential program — the two must be byte for byte the same:
 
 ```bash
-./bin/mapper < data/small.in | sort | ./bin/combiner | sort | ./bin/reducer > /tmp/mr.txt
-./bin/log_seq data/small.in | diff - /tmp/mr.txt && echo SAME
+./bin/mapper < ../data/small.in | sort | ./bin/combiner | sort | ./bin/reducer > /tmp/mr.txt
+./bin/log_seq ../data/small.in | diff - /tmp/mr.txt && echo SAME
 exit                      # releases the allocation
 ```
 
@@ -100,7 +112,7 @@ exit                      # releases the allocation
 
 ```bash
 salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:30:00
-cd ~/HW3/Section2 && bash scripts/verify_q1.sh      # add "full" for medium+large
+cd ~/HW3/Section2/Q1_mapreduce && bash scripts/verify_q1.sh      # add "full" for medium+large
 exit
 ```
 
@@ -111,20 +123,24 @@ cases (empty input, one record, ties, K=0, odd values) and the same input split
 ### 2.4 The real multi-node run and the benchmark
 
 ```bash
-cd ~/HW3/Section2
+cd ~/HW3/Section2/Q1_mapreduce
 sbatch scripts/bench_q1.sh
 squeue -u $USER                                   # wait for it to disappear
 cat results/q1_bench_<jobid>.log
 ```
 
-It asks for **4 nodes** and sweeps input size × number of map tasks, timing each
-stage and checking every run against `log_seq`. Results land in
+It asks for **6 nodes with one task on each** and sweeps input size × number of
+map tasks, timing each stage and checking every run against `log_seq`.
+A task count of N therefore means **N separate machines**, for the MapReduce
+pipeline and for the MPI baseline alike — the same shape Assignment 2 Q7 was
+measured with (`--nodes=N --ntasks-per-node=1`), which is what lets the two be
+put side by side. Results land in
 `results/q1_bench.csv`, one row per run, with a `correct` column.
 
 To change the sweep:
 
 ```bash
-sbatch --export=ALL,DATASETS="small medium",TASKS_LIST="1 2 4 8",REPEATS=2 \
+sbatch --export=ALL,DATASETS="small medium",TASKS_LIST="1 2 4 6",REPEATS=2 \
        scripts/bench_q1.sh
 ```
 
@@ -168,7 +184,7 @@ open; closing it releases the nodes and kills everything.
 
 ```bash
 ssh <your-username>@rce.iiit.ac.in
-cd ~/HW3/Section2
+cd ~/HW3/Section2/Q2_grpc
 salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=01:00:00
 
 scontrol show hostnames $SLURM_JOB_NODELIST    # e.g. node01 node02 node03 node06
@@ -241,9 +257,9 @@ While the stream is still running, from any node:
 After it finishes, the final answer must equal the sequential program's:
 
 ```bash
-cd ~/HW3/Section2
-~/HW3/venv/bin/python3 Q2_grpc/src/query_client.py $(cat logs/coord_addr.txt) --final > /tmp/grpc.txt
-./bin/log_seq data/medium.in | diff - /tmp/grpc.txt && echo SAME
+cd ~/HW3/Section2/Q2_grpc
+~/HW3/venv/bin/python3 src/query_client.py $(cat logs/coord_addr.txt) --final > /tmp/grpc.txt
+../Q1_mapreduce/bin/log_seq ../data/medium.in | diff - /tmp/grpc.txt && echo SAME
 ```
 
 ### 3.6 Stop
@@ -256,15 +272,15 @@ exit                    # releases the allocation
 ### 3.7 All of 3.2–3.6 in one command
 
 ```bash
-cd ~/HW3/Section2
+cd ~/HW3/Section2/Q2_grpc
 salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=00:20:00 bash -c '
   bash scripts/rce_start.sh
   C=$(cat logs/coord_addr.txt)
   N=($(scontrol show hostnames $SLURM_JOB_NODELIST))
   srun --nodes=1 --ntasks=1 --nodelist=${N[1]} --overlap bash -c \
-      "cd Q2_grpc/src && ~/HW3/venv/bin/python3 stream_client.py $C ../../data/medium.in --reset --wait"
+      "cd src && ~/HW3/venv/bin/python3 stream_client.py $C ../../data/medium.in --reset --wait"
   srun --nodes=1 --ntasks=1 --nodelist=${N[2]} --overlap bash -c \
-      "cd Q2_grpc/src && ~/HW3/venv/bin/python3 query_client.py $C --final" > logs/final.txt
+      "cd src && ~/HW3/venv/bin/python3 query_client.py $C --final" > logs/final.txt
   ./bin/log_seq data/medium.in | diff - logs/final.txt && echo "RESULT: SAME as log_seq"
   bash scripts/rce_start.sh stop'
 ```
@@ -273,7 +289,7 @@ salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=00:20:00 bash -c '
 
 ```bash
 salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:40:00
-cd ~/HW3/Section2 && ~/HW3/venv/bin/python3 scripts/verify_q2.py
+cd ~/HW3/Section2/Q2_grpc && ~/HW3/venv/bin/python3 scripts/verify_q2.py
 exit
 ```
 
@@ -284,7 +300,7 @@ still arriving, and K given at query time.
 ### 3.9 The benchmark sweep
 
 ```bash
-sbatch scripts/bench_q2.sh data/medium.in
+sbatch scripts/bench_q2.sh ../data/medium.in
 squeue -u $USER
 cat results/q2_bench_<jobid>.log
 ```
@@ -299,14 +315,22 @@ query clients, checking every run against `log_seq`. Results go to
 ## 4. Plots
 
 ```bash
-cd ~/HW3/Section2
-~/HW3/venv/bin/python3 scripts/plot.py       # reads whatever CSVs exist in results/
+cd ~/HW3/Section2/Q1_mapreduce
+~/HW3/venv/bin/python3 scripts/plot_q1.py     # -> results/q1_plots.png, q1_vs_mpi.png
+
+cd ~/HW3/Section2/Q2_grpc
+~/HW3/venv/bin/python3 scripts/plot_q2.py     # -> results/q2_plots.png
 ```
+
+Each question plots only its own CSVs, from its own `results/` folder.
 
 Then copy the results back to your laptop:
 
 ```bash
-rsync -avz <your-username>@rce.iiit.ac.in:~/HW3/Section2/results/ Section2/results/
+rsync -avz <your-username>@rce.iiit.ac.in:~/HW3/Section2/Q1_mapreduce/results/ \
+      Section2/Q1_mapreduce/results/
+rsync -avz <your-username>@rce.iiit.ac.in:~/HW3/Section2/Q2_grpc/results/ \
+      Section2/Q2_grpc/results/
 ```
 
 ---
@@ -325,10 +349,10 @@ bash scripts/verify_q1.sh              # 34 checks
 
 # Q2: 4 workers + coordinator on this machine
 bash scripts/run_local.sh 4
-cd Q2_grpc/src
+cd src
 python3 stream_client.py localhost:50051 ../../data/medium.in --wait
 python3 query_client.py  localhost:50051 --final
-cd ../.. && bash scripts/run_local.sh stop
+cd .. && bash scripts/run_local.sh stop
 ```
 
 ---
@@ -338,7 +362,7 @@ cd ../.. && bash scripts/run_local.sh stop
 | What you see | What it means |
 | ------------ | ------------- |
 | `Access denied by pam_slurm_adopt` | you `ssh`'d to a node you do not hold — `salloc` first |
-| `Method not found` | the server you reached is not ours. Either the stubs are stale (re-run `scripts/rce_setup.sh`), or another user holds your port — re-run `rce_start.sh`, or set `PORT_BASE=<something else>` |
+| `Method not found` | the server you reached is not ours. Either the stubs are stale (re-run `Q2_grpc/scripts/setup_python.sh`), or another user holds your port — re-run `rce_start.sh`, or set `PORT_BASE=<something else>` |
 | `Failed to bind to address ...: Address already in use` | that port is taken. `bash scripts/rce_start.sh stop`, then start again, or use another `PORT_BASE` |
 | `ModuleNotFoundError: No module named 'grpc'` | you used the system `python3` (3.6). Use `~/HW3/venv/bin/python3` |
 | the query returns zeros | the stream has not started yet, or you queried a coordinator that was reset. Use `--final` to wait for the stream to finish |
@@ -353,7 +377,7 @@ cd ../.. && bash scripts/run_local.sh stop
 
 | Script | What it does |
 | ------ | ------------ |
-| `scripts/rce_setup.sh` | one-time: build, venv, gRPC stubs, datasets |
+| `Q2_grpc/scripts/setup_python.sh` | one-time: build, venv, gRPC stubs, datasets |
 | `scripts/make_data.sh` | regenerate the datasets (fixed seeds) |
 | `scripts/verify_q1.sh` | Q1 correctness — 34 checks against `log_seq` |
 | `scripts/verify_q2.py` | Q2 correctness — 76 checks against `log_seq` |
@@ -362,4 +386,4 @@ cd ../.. && bash scripts/run_local.sh stop
 | `scripts/bench_mpi.sh` | times the MPI program, for the Q1-vs-MPI comparison |
 | `scripts/rce_start.sh` | start / stop Q2 across an allocation |
 | `scripts/run_local.sh` | start / stop Q2 on one machine |
-| `scripts/plot.py` | build the plots from the CSVs in `results/` |
+| `scripts/plot_q1.py` | build the plots from the CSVs in `results/` |

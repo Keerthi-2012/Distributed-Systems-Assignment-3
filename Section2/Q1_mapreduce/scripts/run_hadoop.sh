@@ -1,7 +1,7 @@
 #!/bin/bash
 # run_hadoop.sh - run Q1 as a real Hadoop Streaming job on YARN.
 #
-#   bash Q1_mapreduce/run_hadoop.sh data/medium.in [output_dir]
+#   bash scripts/run_hadoop.sh ../data/medium.in [output_dir]
 #
 # Requires Hadoop 3.3.6 with HDFS and YARN running, and $HADOOP_HOME set.
 # The mapper, combiner and reducer are the C++ executables built by `make q1`;
@@ -15,7 +15,7 @@ set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 
-INPUT=${1:-data/medium.in}
+INPUT=${1:-../data/medium.in}
 OUTDIR=${2:-q7_out}
 NAME=$(basename "$INPUT" .in)
 HDFS_IN=${HDFS_IN:-/user/$USER/q7/$NAME.in}

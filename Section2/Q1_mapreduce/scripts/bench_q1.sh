@@ -1,19 +1,30 @@
 #!/bin/bash
 #SBATCH --job-name=q7_q1_bench
 #SBATCH --partition=debug
-#SBATCH --nodes=4
+#SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=02:00:00
 #
-# --cpus-per-task=8 is essential, not a detail. Without it Slurm gives this job
-# ONE physical core per node (nproc says 2, but they are the two hyperthreads of
-# a single core: two mappers then take 2.49 s where one takes 1.27 s). With only
-# one core per node, 8 map tasks on 4 nodes timeshare 4 cores and show no gain
-# over 4 tasks, and mpirun -np 8 on one node runs 8 ranks on one core, which is
-# why MPI appeared not to scale at all. With 8 cpus per node, two mappers on a
-# node both finish in 1.22 s, and N map tasks and N MPI ranks each get N real
-# cores - which is what makes the comparison in the report fair.
+# SIX nodes, ONE task on each. This is the same allocation shape the Q7 MPI
+# program was measured with in Assignment 2:
+#
+#     sbatch --nodes=1 --ntasks-per-node=1 scripts/simple_q7.sh data/large.in
+#     sbatch --nodes=2 --ntasks-per-node=1 scripts/simple_q7.sh data/large.in
+#     sbatch --nodes=4 --ntasks-per-node=1 scripts/simple_q7.sh data/large.in
+#     sbatch --nodes=6 --ntasks-per-node=1 scripts/simple_q7.sh data/large.in
+#
+# So a task count of N here means N machines with one process each, for BOTH
+# sides of the comparison - never N processes sharing one machine's cores. That
+# is the only way the MapReduce timings and the Assignment 2 MPI timings mean
+# the same thing. TASKS_LIST is 1 2 4 6 for the same reason.
+#
+# --cpus-per-task=8 gives each node real cores rather than one core's two
+# hyperthreads. Without it Slurm hands out a single physical core per node
+# (nproc reports 2, but they are siblings: two mappers then take 2.49 s where
+# one takes 1.27 s, and with 8 cpus both finish in 1.22 s). One mapper cannot
+# use eight cores, but the sort stage and the reducer can, and the headroom
+# stops a second process on a node from halving the speed of the first.
 #SBATCH --output=results/q1_bench_%j.log
 #
 # bench_q1.sh - MapReduce benchmark sweep, AND the MapReduce-vs-MPI comparison.
@@ -22,9 +33,10 @@
 #                                               different nodes, via srun
 #   bash   scripts/bench_q1.sh                  locally: parallel processes
 #
-# On the cluster the map tasks run with srun, one per node, so the mappers
-# really are on separate machines - the same shape as the MPI program they are
-# compared against, which is what makes the comparison fair. The input and the
+# On the cluster BOTH sides run one process per machine: the map tasks with
+# srun --distribution=cyclic, the MPI ranks with mpirun --map-by node. So
+# "tasks=4" always means four separate machines, and the numbers can be put
+# beside the Assignment 2 Q7 results, which were taken the same way. The input and the
 # intermediate files sit in the shared home directory that every node can see,
 # standing in for HDFS.
 #
@@ -45,7 +57,7 @@ ROOT=$(pwd)
 mkdir -p results logs
 REPEATS=${REPEATS:-3}
 DATASETS=${DATASETS:-"small medium large"}
-TASKS_LIST=${TASKS_LIST:-"1 2 4 8"}
+TASKS_LIST=${TASKS_LIST:-"1 2 4 6"}
 MPI_ONLY=${MPI_ONLY:-0}
 
 CSV=results/q1_bench.csv
@@ -64,8 +76,17 @@ ON_CLUSTER=0
 if [ -n "$SLURM_JOB_ID" ]; then
     ON_CLUSTER=1
     NODES=($(scontrol show hostnames "$SLURM_JOB_NODELIST"))
-    echo "nodes: ${NODES[*]}"
+    echo "nodes: ${NODES[*]} (${#NODES[@]} machines, one task each)"
     module load openmpi/4.1.5 2>/dev/null
+
+    # REQUIRED for running MPI across nodes on RCE. Left alone, Open MPI picks
+    # an address on 10.0.0.x that the compute nodes cannot reach each other on,
+    # and the run either hangs for ever or dies with "failed to TCP connect to
+    # a peer MPI process". 172.16.0.0/24 is the network they actually share.
+    # (Taken from the Assignment 2 Q7 script, which had already solved this.)
+    export OMPI_MCA_btl_tcp_if_include=172.16.0.0/24
+    # Silences a harmless warning about copying memory between processes.
+    export OMPI_MCA_btl_vader_single_copy_mechanism=none
 fi
 
 now() { date +%s.%N; }
@@ -95,7 +116,7 @@ run_tasks() {   # run_tasks <ntasks> <command using $TID>
 }
 
 for name in $DATASETS; do
-    INPUT=$ROOT/data/$name.in
+    INPUT=$ROOT/../data/$name.in
     [ -f "$INPUT" ] || { echo "skip $name (no $INPUT)"; continue; }
     RECORDS=$(head -1 "$INPUT" | awk '{print $1}')
     INPUT_BYTES=$(stat -c %s "$INPUT")
@@ -139,17 +160,23 @@ for name in $DATASETS; do
                 # mpirun, not srun: srun starts the ranks but does not wire
                 # up MPI here, and the program then fails silently.
                 #
-                # ALL RANKS ON THIS ONE NODE (--host). Spread over several nodes,
-                # Open MPI picks the wrong network interface here and the ranks
-                # never connect: it prints "connect() to 10.0.0.102:1024 failed"
-                # and then hangs for ever. Keeping the ranks local sidesteps that,
-                # and it matches how the MapReduce numbers are taken anyway.
+                # --map-by node puts ONE rank on each machine, going round the
+                # nodes one at a time, instead of filling the first node's cores
+                # before touching the second. With -np 4 in this 6 node
+                # allocation that is 4 machines with one process each - exactly
+                # what Assignment 2 measured with
+                # --nodes=4 --ntasks-per-node=1.
                 #
-                # timeout as well, because a hang here used to stall the whole
+                # This used to be confined to one node with --host, because
+                # multi-node runs hung. The cause was the network interface, not
+                # the node count, and OMPI_MCA_btl_tcp_if_include above fixes
+                # it; a single-node MPI number could not fairly be compared with
+                # MapReduce timings taken across several machines.
+                #
+                # timeout stays, because a hang here used to stall the whole
                 # sweep: one stuck MPI run meant no MapReduce results at all.
                 M0=$(now)
-                timeout 600 mpirun --oversubscribe -np "$TASKS" \
-                    --host "$(hostname):$TASKS" \
+                timeout 600 mpirun -np "$TASKS" --map-by node \
                     ./bin/log_mpi "$INPUT" \
                     > "$WORK/mpi_out.txt" 2> "$WORK/mpi_err.txt"
                 MPI_RC=$?

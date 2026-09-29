@@ -184,19 +184,24 @@ Hadoop Streaming and under the Slurm pipeline.
 
 ## 3. What is implemented, file by file
 
-Q1 and the reference programs are C++; Q2 is Python. `bin/` is produced by the
-build and is not in the repository.
+Section 2 holds exactly **two folders**, one per question, and each is
+self-contained: its own sources, its own `scripts/`, its own `results/`. Nothing
+is shared between them except the datasets in `data/`, which both must read for
+the comparison in the report to be meaningful.
+
+Q1 and the reference programs are C++; Q2 is Python. `Q1_mapreduce/bin/` is
+produced by the build and is not in the repository.
 
 | File | What it is | Lines |
 | ---- | ---------- | ----- |
 | **Shared** | | |
-| [common/analytics.h](common/analytics.h) | the shared `Stats` box, how to add two of them together, and the `key<TAB>value` format they travel in | 48 |
-| [common/analytics.cpp](common/analytics.cpp) | its implementation: merging, record parsing, writing and reading the pair format | 125 |
+| [Q1_mapreduce/analytics.h](Q1_mapreduce/analytics.h) | the shared `Stats` box, how to add two of them together, and the `key<TAB>value` format they travel in | 48 |
+| [Q1_mapreduce/analytics.cpp](Q1_mapreduce/analytics.cpp) | its implementation: merging, record parsing, writing and reading the pair format | 125 |
 | **Q1 — MapReduce** | | |
 | [Q1_mapreduce/mapper.cpp](Q1_mapreduce/mapper.cpp) | **the map step**: reads a split of the log file, counts every record (all the per-record logic is here), emits per-server / per-endpoint / per-interval aggregates | 60 |
 | [Q1_mapreduce/combiner.cpp](Q1_mapreduce/combiner.cpp) | merges a mapper's own pairs before the shuffle; same format in and out | 20 |
 | [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) | **the reduce step**: adds every mapper's pairs together, then works out the averages, the busiest interval and the Top-K lists and prints them | 95 |
-| [Q1_mapreduce/run_hadoop.sh](Q1_mapreduce/run_hadoop.sh) | runs it as a real Hadoop Streaming job on YARN, then diffs against `log_seq` | 70 |
+| [Q1_mapreduce/scripts/run_hadoop.sh](Q1_mapreduce/scripts/run_hadoop.sh) | runs it as a real Hadoop Streaming job on YARN, then diffs against `log_seq` | 70 |
 | **Q2 — gRPC (Python)** | | |
 | [Q2_grpc/proto/loganalytics.proto](Q2_grpc/proto/loganalytics.proto) | the interface: `LogAnalytics` (public) and `Worker` (internal) | 211 |
 | [Q2_grpc/src/analytics.py](Q2_grpc/src/analytics.py) | the Q7 analytics in Python: mergeable `Stats`, whole-number response times, exact output format | 207 |
@@ -205,33 +210,60 @@ build and is not in the repository.
 | [Q2_grpc/src/stream_client.py](Q2_grpc/src/stream_client.py) | replays a dataset as a live stream (rate, batch size, preload) | 185 |
 | [Q2_grpc/src/query_client.py](Q2_grpc/src/query_client.py) | prints the analytics in HW2 format; also a query load tester | 158 |
 | [Q2_grpc/src/dashboard.py](Q2_grpc/src/dashboard.py) | the terminal dashboard, redrawing live | 146 |
-| **Reference (HW2, unchanged)** | | |
-| [reference/log_seq.cpp](reference/log_seq.cpp), [reference/common.cpp](reference/common.cpp) | HW2's sequential program — the correctness baseline | 330 |
-| [reference/log_mpi.cpp](reference/log_mpi.cpp) | the MPI program for the Q1-vs-MPI comparison (reconstructed; HW2's own is not in this folder) | 200 |
-| [reference/gen_dataset.cpp](reference/gen_dataset.cpp) | HW2's dataset generator, fixed seeds | 106 |
-| **Scripts** | | |
-| [scripts/make_data.sh](scripts/make_data.sh) | generates tiny / small / medium / large with fixed seeds | |
-| [scripts/verify_q1.sh](scripts/verify_q1.sh) | Q1 correctness: 34 checks against `log_seq` | |
-| [scripts/verify_q2.py](scripts/verify_q2.py) | Q2 correctness: worker counts × strategies × batch sizes, concurrent sources, mid-stream queries | |
-| [scripts/run_local.sh](scripts/run_local.sh) | starts Q2's coordinator and workers on one machine | |
-| [scripts/rce_start.sh](scripts/rce_start.sh) | starts Q2's coordinator and workers across an allocation | |
-| [scripts/bench_q1.sh](scripts/bench_q1.sh), [scripts/bench_q2.sh](scripts/bench_q2.sh) | the benchmark sweeps | |
-| [scripts/plot.py](scripts/plot.py) | CSVs → `results/q1_plots.png`, `results/q2_plots.png` | |
+| **HW2 reference, inside Q1 (unchanged)** | | |
+| [Q1_mapreduce/reference/log_seq.cpp](Q1_mapreduce/reference/log_seq.cpp), [common.cpp](Q1_mapreduce/reference/common.cpp) | HW2's sequential program — the correctness baseline for **both** questions | 330 |
+| [Q1_mapreduce/reference/log_mpi.cpp](Q1_mapreduce/reference/log_mpi.cpp) | the MPI program for the Q1-vs-MPI comparison (reconstructed; HW2's own is not in this folder) | 200 |
+| [Q1_mapreduce/reference/gen_dataset.cpp](Q1_mapreduce/reference/gen_dataset.cpp) | HW2's dataset generator, fixed seeds | 106 |
+| **Q1 scripts** | | |
+| [Q1_mapreduce/scripts/make_data.sh](Q1_mapreduce/scripts/make_data.sh) | generates tiny / small / medium / large into `../data/` with fixed seeds | |
+| [Q1_mapreduce/scripts/run_q1.sh](Q1_mapreduce/scripts/run_q1.sh) | run the pipeline once locally, any number of map tasks; checks the answer | |
+| [Q1_mapreduce/scripts/verify_q1.sh](Q1_mapreduce/scripts/verify_q1.sh) | Q1 correctness: 34 checks against `log_seq` | |
+| [Q1_mapreduce/scripts/bench_q1.sh](Q1_mapreduce/scripts/bench_q1.sh) | the Slurm sweep, and the MapReduce-vs-MPI comparison | |
+| [Q1_mapreduce/scripts/bench_mpi.sh](Q1_mapreduce/scripts/bench_mpi.sh) | the MPI baseline on its own | |
+| [Q1_mapreduce/scripts/plot_q1.py](Q1_mapreduce/scripts/plot_q1.py) | Q1's CSVs → `results/q1_plots.png`, `results/q1_vs_mpi.png` | |
+| **Q2 scripts** | | |
+| [Q2_grpc/scripts/setup_python.sh](Q2_grpc/scripts/setup_python.sh) | virtualenv, grpcio, and the generated gRPC stubs | |
+| [Q2_grpc/scripts/run_local.sh](Q2_grpc/scripts/run_local.sh) | starts Q2's coordinator and workers on one machine | |
+| [Q2_grpc/scripts/rce_start.sh](Q2_grpc/scripts/rce_start.sh) | starts Q2's coordinator and workers across an allocation | |
+| [Q2_grpc/scripts/verify_q2.py](Q2_grpc/scripts/verify_q2.py) | Q2 correctness: worker counts × strategies × batch sizes, concurrent sources, mid-stream queries | |
+| [Q2_grpc/scripts/bench_q2.sh](Q2_grpc/scripts/bench_q2.sh) | the Q2 benchmark sweep | |
+| [Q2_grpc/scripts/plot_q2.py](Q2_grpc/scripts/plot_q2.py) | Q2's CSVs → `results/q2_plots.png` | |
 
 ```
 Section2/
 ├── README.md              this file: spec, design, how to run, results
-├── Makefile               reference tools + Q1 binaries
-├── common/                the shared analytics core
-├── Q1_mapreduce/          mapper, combiner, reducer, Hadoop runner
-├── Q2_grpc/               proto/ and src/ (Python)
-├── reference/             HW2 sources, unchanged = the correctness baseline
-├── scripts/               data, verification, cluster runs, benchmarks, plots
-├── tests/                 hand-made inputs: worked example + 5 edge cases
-├── data/                  generated datasets (not in git)
-├── bin/                   built binaries (not in git)
-└── results/               verification output, benchmark CSVs, plots
+├── run.md                 step-by-step instructions for the RCE cluster
+├── REPORT.md              the measurements and what they mean
+│
+├── Q1_mapreduce/                 ---- everything Q1 needs, and nothing else ----
+│   ├── Makefile                  builds all of the below
+│   ├── analytics.h/.cpp          the Stats box: merging, parsing, the pair format
+│   ├── mapper.cpp                the map step
+│   ├── combiner.cpp              merges a mapper's own pairs before the shuffle
+│   ├── reducer.cpp               the reduce step, and the final report
+│   ├── reference/                HW2 sources, unchanged = the correctness baseline
+│   ├── scripts/                  data, verify, run, benchmark, plot, Hadoop
+│   ├── tests/                    worked example + 5 edge-case inputs
+│   ├── bin/                      built binaries (not in git)
+│   ├── logs/                     scratch space for runs (not in git)
+│   └── results/                  verification output, Q1 CSVs, Q1 plots
+│
+├── Q2_grpc/                      ---- everything Q2 needs, and nothing else ----
+│   ├── proto/                    the .proto interface definition
+│   ├── src/                      coordinator, worker, the three clients, analytics
+│   ├── scripts/                  setup, start, verify, benchmark, plot
+│   ├── logs/                     server logs (not in git)
+│   └── results/                  verification output, Q2 CSVs, Q2 plots
+│
+└── data/                  generated datasets (not in git)
 ```
+
+`data/` is the one thing outside the two folders. It is shared on purpose: the
+report compares Q1 and Q2 on **the same bytes**, and a copy inside each question
+could quietly drift apart. Q1 generates it (`Q1_mapreduce/scripts/make_data.sh`)
+and records the checksums in `Q1_mapreduce/results/dataset_md5.txt`; Q2 reads it
+as `../data/...`. Q2 also uses Q1's `bin/log_seq` as its correctness oracle,
+for the same reason — one baseline, not two.
 
 ## 3b. How this is run, and why not Hadoop
 
@@ -271,7 +303,7 @@ and is covered in [run.md §5](run.md).
 
 ## 4. Shared analytics core
 
-`common/` holds only what the mapper, the combiner and the reducer genuinely
+`analytics.h`/`.cpp` hold only what the mapper, the combiner and the reducer genuinely
 share: parsing a record line, the mergeable `Stats` structure (counts, sums, min,
 max, and sparse per-server / per-endpoint / per-interval maps), adding two
 `Stats` together, and writing and reading the `key<TAB>value` text they travel
@@ -284,7 +316,7 @@ program can be read on its own:
 | ----- | -------------- |
 | counting one record — statuses, min/max, per-server, per-endpoint, per-minute | [Q1_mapreduce/mapper.cpp](Q1_mapreduce/mapper.cpp) (`count`) |
 | the final report — averages, busiest interval, Top-K sorting, printing | [Q1_mapreduce/reducer.cpp](Q1_mapreduce/reducer.cpp) (`print_answer`) |
-| adding two partial results together | [common/analytics.cpp](common/analytics.cpp) (`add_stats`) |
+| adding two partial results together | [Q1_mapreduce/analytics.cpp](Q1_mapreduce/analytics.cpp) (`add_stats`) |
 
 Q2 is Python and has its own [analytics.py](Q2_grpc/src/analytics.py), which
 follows the same design. The two are kept honest not by sharing code but by both
@@ -672,7 +704,7 @@ sbatch scripts/bench_q2_job.sh data/medium.in    # 6 nodes -> results/q2_bench.c
 ### 11.5 Plots
 
 ```bash
-python3 scripts/plot.py                 # -> results/q1_plots.png, q2_plots.png
+python3 scripts/plot_q1.py                 # -> results/q1_plots.png, q2_plots.png
 ```
 
 ### 11.6 Things that bite

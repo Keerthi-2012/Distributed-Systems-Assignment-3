@@ -3,7 +3,7 @@
 // Input and output look identical, so the reducer cannot tell whether the
 // combiner ran. That is allowed because adding can be done in any order.
 
-#include "../common/analytics.h"
+#include "analytics.h"
 #include <iostream>
 
 int main()

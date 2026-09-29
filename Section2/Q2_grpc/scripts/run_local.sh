@@ -11,7 +11,7 @@
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 PY=${PY:-python3}
-SRC=$ROOT/Q2_grpc/src
+SRC=$ROOT/src
 mkdir -p logs
 
 if [ "$1" = "stop" ]; then
@@ -44,7 +44,7 @@ echo "coordinator : localhost:50051"
 echo "workers     : $WORKERS"
 echo "strategy    : $STRATEGY"
 echo
-echo "next:  cd Q2_grpc/src && python3 dashboard.py localhost:50051"
-echo "       cd Q2_grpc/src && python3 stream_client.py localhost:50051 ../../data/medium.in --wait"
-echo "       cd Q2_grpc/src && python3 query_client.py localhost:50051 --final"
+echo "next:  cd src && python3 dashboard.py localhost:50051"
+echo "       cd src && python3 stream_client.py localhost:50051 ../../data/medium.in --wait"
+echo "       cd src && python3 query_client.py localhost:50051 --final"
 echo "stop:  bash scripts/run_local.sh stop"

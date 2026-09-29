@@ -6,7 +6,7 @@
 \usepackage{titlesec}
 % Figures come straight from the results folder, so the report always shows the
 % plots that match the committed CSVs.
-\graphicspath{{../Section2/results/}}
+\graphicspath{{../Section2/Q1_mapreduce/results/}{../Section2/Q2_grpc/results/}}
 \titleformat{\section}{\large\bfseries\color{NavyBlue}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
 \setlength{\parskip}{0.45em}\setlength{\parindent}{0pt}

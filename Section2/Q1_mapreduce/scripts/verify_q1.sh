@@ -74,16 +74,16 @@ done
 
 # a different query K, to check K is not hard-coded
 run_case tests/sample.in 2 "--k 1"
-run_case data/tiny.in 3 "--k 3"
+run_case ../data/tiny.in 3 "--k 3"
 
 # generated datasets
-for f in data/tiny.in data/small.in; do
+for f in ../data/tiny.in ../data/small.in; do
     [ -f "$f" ] || continue
     for m in 1 2 4 8; do run_case "$f" $m; done
 done
 
 if [ "$1" = "full" ]; then
-    for f in data/medium.in data/large.in; do
+    for f in ../data/medium.in ../data/large.in; do
         [ -f "$f" ] || continue
         for m in 4 16; do run_case "$f" $m; done
     done

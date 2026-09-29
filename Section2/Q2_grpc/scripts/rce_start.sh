@@ -33,14 +33,14 @@ PORT_BASE=${PORT_BASE:-$((50000 + $(id -u) % 9000))}
 
 if [ "$1" = "stop" ]; then
     for h in $(scontrol show hostnames "$SLURM_JOB_NODELIST"); do
-        ssh -n "$h" "pkill -u $USER -f 'Q2_grpc/src/(worker|coordinator).py'" 2>/dev/null
+        ssh -n "$h" "pkill -u $USER -f 'src/(worker|coordinator).py'" 2>/dev/null
     done
     echo "stopped"
     exit 0
 fi
 
 PY=${PY:-$HOME/HW3/venv/bin/python3}   # RCE's default python3 is 3.6, too old for grpcio
-SRC=$ROOT/Q2_grpc/src
+SRC=$ROOT/src
 
 PER_NODE=${1:-1}
 STRATEGY=${2:-round_robin}
@@ -88,7 +88,7 @@ echo "coordinator : $COORD:$PORT_BASE"
 echo "workers     : $WORKERS"
 echo "strategy    : $STRATEGY"
 echo
-echo "next:  cd Q2_grpc/src"
+echo "next:  cd src"
 echo "       ~/HW3/venv/bin/python3 dashboard.py     $COORD:$PORT_BASE"
 echo "       ~/HW3/venv/bin/python3 stream_client.py $COORD:$PORT_BASE ../../data/medium.in --rate 100000 --wait"
 echo "       ~/HW3/venv/bin/python3 query_client.py  $COORD:$PORT_BASE --final"

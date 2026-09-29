@@ -3,8 +3,8 @@
 #
 #   bash scripts/run_q1.sh [input] [output] [map_tasks]
 #
-#   bash scripts/run_q1.sh data/small.in                 1 mapper, prints the answer
-#   bash scripts/run_q1.sh data/medium.in out.txt 4      4 mappers in parallel
+#   bash scripts/run_q1.sh ../data/small.in                 1 mapper, prints the answer
+#   bash scripts/run_q1.sh ../data/medium.in out.txt 4      4 mappers in parallel
 #
 # This is the same five stages Hadoop Streaming would run, orchestrated by a
 # shell script instead (the Hadoop service on RCE is not usable at the moment):
@@ -21,7 +21,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-INPUT=${1:-data/small.in}
+INPUT=${1:-../data/small.in}
 OUTPUT=${2:-}
 TASKS=${3:-1}
 

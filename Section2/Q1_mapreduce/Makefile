@@ -39,17 +39,17 @@ $(BIN)/gen_dataset: reference/gen_dataset.cpp | $(BIN)
 # ---- Q1: standalone C++ executables for Hadoop Streaming ----
 q1: $(BIN)/mapper $(BIN)/combiner $(BIN)/reducer
 
-COMMON_SRC = common/analytics.cpp
-COMMON_HDR = common/analytics.h
+COMMON_SRC = analytics.cpp
+COMMON_HDR = analytics.h
 
-$(BIN)/mapper: Q1_mapreduce/mapper.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
-	$(CXX) $(CXXFLAGS) -o $@ Q1_mapreduce/mapper.cpp $(COMMON_SRC)
+$(BIN)/mapper: mapper.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
+	$(CXX) $(CXXFLAGS) -o $@ mapper.cpp $(COMMON_SRC)
 
-$(BIN)/combiner: Q1_mapreduce/combiner.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
-	$(CXX) $(CXXFLAGS) -o $@ Q1_mapreduce/combiner.cpp $(COMMON_SRC)
+$(BIN)/combiner: combiner.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
+	$(CXX) $(CXXFLAGS) -o $@ combiner.cpp $(COMMON_SRC)
 
-$(BIN)/reducer: Q1_mapreduce/reducer.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
-	$(CXX) $(CXXFLAGS) -o $@ Q1_mapreduce/reducer.cpp $(COMMON_SRC)
+$(BIN)/reducer: reducer.cpp $(COMMON_SRC) $(COMMON_HDR) | $(BIN)
+	$(CXX) $(CXXFLAGS) -o $@ reducer.cpp $(COMMON_SRC)
 
 data: $(BIN)/gen_dataset
 	bash scripts/make_data.sh

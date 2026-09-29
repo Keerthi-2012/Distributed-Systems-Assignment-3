@@ -5,7 +5,7 @@
 // It counts the whole piece first and only then prints, so it prints a few
 // thousand lines instead of one per record. That is what keeps the sort cheap.
 
-#include "../common/analytics.h"
+#include "analytics.h"
 #include <iostream>
 
 // Count one record into the box. This is the whole map step.

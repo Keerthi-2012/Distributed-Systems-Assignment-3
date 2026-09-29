@@ -3,7 +3,7 @@
 // Only ONE reducer is used, because the Top-K lists need the counts of all
 // servers: a server that is 11th on every reducer could still be 1st overall.
 
-#include "../common/analytics.h"
+#include "analytics.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>

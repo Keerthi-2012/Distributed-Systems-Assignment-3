@@ -31,7 +31,7 @@
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 ROOT=$(pwd)
 mkdir -p results logs
-DATA=${1:-data/medium.in}
+DATA=${1:-../data/medium.in}
 REPEATS=${REPEATS:-3}
 # Which experiments to run: any of "workers batch strategy queries".
 BLOCKS=${BLOCKS:-"workers batch strategy queries"}
@@ -56,7 +56,12 @@ WORKER_NODES=("${NODES[@]:2}")
 MAXW=${#WORKER_NODES[@]}
 
 echo "coordinator $COORD   client $CLIENT   workers ${WORKER_NODES[*]}   data $DATA"
-./bin/log_seq "$DATA" > logs/expected_bench.txt
+# The expected answer comes from the HW2 sequential program, which is C++ and
+# is built by Q1 (cd ../Q1_mapreduce && make). Q2 only reads it, as the oracle
+# to compare its own output against.
+SEQ=${SEQ:-../Q1_mapreduce/bin/log_seq}
+[ -x "$SEQ" ] || { echo "$SEQ missing - build it with: (cd ../Q1_mapreduce && make)"; exit 1; }
+"$SEQ" "$DATA" > logs/expected_bench.txt
 
 CSV=results/q2_bench.csv
 QCSV=results/q2_queries.csv
@@ -67,7 +72,7 @@ DATASET_NAME=$(basename "$DATA" .in)
 [ -f "$QCSV" ] || echo "dataset,workers,strategy,batch_size,query_clients,query_mode,run,queries,qps,p50_ms,p95_ms,p99_ms" > "$QCSV"
 
 PY=${PY:-$HOME/HW3/venv/bin/python3}   # RCE's default python3 is 3.6
-SRC=$ROOT/Q2_grpc/src
+SRC=$ROOT/src
 
 on() { local h=$1; shift; srun --nodes=1 --ntasks=1 --nodelist="$h" --overlap "$@"; }
 
@@ -111,7 +116,7 @@ run_config() {   # run_config <W> <strategy> <batch> <query_clients> <mode> <run
     if [ "$ready" != 1 ]; then
         echo "  !! only $up/$W workers up - skipping this run"
         for h in "$COORD" "${WORKER_NODES[@]}"; do
-            ssh -n "$h" "pkill -u $USER -f 'Q2_grpc/src/(worker|coordinator).py'" 2>/dev/null
+            ssh -n "$h" "pkill -u $USER -f 'src/(worker|coordinator).py'" 2>/dev/null
         done
         kill "${PIDS[@]}" 2>/dev/null
         sleep 3
@@ -157,7 +162,7 @@ run_config() {   # run_config <W> <strategy> <batch> <query_clients> <mode> <run
     wait "${PIDS[@]}" 2>/dev/null
     # srun's wrapper dying does not always take the server with it.
     for h in "$COORD" "${WORKER_NODES[@]}"; do
-        ssh -n "$h" "pkill -u $USER -f 'Q2_grpc/src/(worker|coordinator).py'" 2>/dev/null
+        ssh -n "$h" "pkill -u $USER -f 'src/(worker|coordinator).py'" 2>/dev/null
     done
     sleep 3
 }

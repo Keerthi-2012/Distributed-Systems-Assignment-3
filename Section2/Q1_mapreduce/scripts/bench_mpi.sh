@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=q7_mpi_bench
 #SBATCH --partition=debug
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --nodes=6
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=01:00:00
 #SBATCH --output=results/q1_mpi_%j.log
@@ -14,11 +14,13 @@
 #
 # Build first:  module load openmpi/4.1.5 && make mpi
 #
-# ALL RANKS ON ONE NODE, deliberately. Two reasons:
-#   - the MapReduce numbers in results/q1_bench.csv were measured the same way
-#     (parallel processes on one node), so the comparison is like-for-like;
-#   - cross-node `mpirun` startup hangs on this cluster, so a multi-node run
-#     would measure the launcher rather than the program.
+# ONE RANK PER MACHINE, across nodes. -np 4 means four separate machines, not
+# four cores of one. That is the shape Assignment 2 measured Q7 with
+# (--nodes=N --ntasks-per-node=1), and the shape the MapReduce pipeline in
+# bench_q1.sh runs in, so all three sets of numbers can be compared directly.
+#
+# OMPI_MCA_btl_tcp_if_include below is what makes a multi-node run work at all
+# on RCE; without it Open MPI tries an unroutable 10.0.0.x address and hangs.
 #
 # Every run is diffed against bin/log_seq; a run that does not match is recorded
 # as correct=no and discarded by the plots.
@@ -30,8 +32,12 @@ ROOT=$(pwd)
 mkdir -p results logs
 module load openmpi/4.1.5 2>/dev/null
 
+# The network the RCE compute nodes actually share. Required for multi-node MPI.
+export OMPI_MCA_btl_tcp_if_include=172.16.0.0/24
+export OMPI_MCA_btl_vader_single_copy_mechanism=none
+
 DATASETS=${DATASETS:-"small medium large"}
-PROCS_LIST=${PROCS_LIST:-"1 2 4 8"}
+PROCS_LIST=${PROCS_LIST:-"1 2 4 6"}   # node counts, matching Assignment 2
 REPEATS=${REPEATS:-3}
 
 [ -x ./bin/log_mpi ] || { echo "bin/log_mpi missing - run: module load openmpi/4.1.5 && make mpi"; exit 1; }
@@ -40,7 +46,7 @@ CSV=results/q1_mpi.csv
 echo "dataset,records,procs,run,total_s,correct" > "$CSV"
 
 for name in $DATASETS; do
-    INPUT=data/$name.in
+    INPUT=../data/$name.in
     [ -f "$INPUT" ] || { echo "skip $name (missing)"; continue; }
     RECORDS=$(head -1 "$INPUT" | awk '{print $1}')
     ./bin/log_seq "$INPUT" > "logs/expected_$name.txt"
@@ -48,7 +54,8 @@ for name in $DATASETS; do
     for P in $PROCS_LIST; do
         for run in $(seq 1 $REPEATS); do
             START=$(date +%s.%N)
-            timeout 300 mpirun --oversubscribe --bind-to none -np "$P" \
+            # --map-by node: one rank on each machine, round robin.
+            timeout 300 mpirun -np "$P" --map-by node \
                 ./bin/log_mpi "$INPUT" > "logs/mpi_out.txt" 2> "logs/mpi_err.txt"
             END=$(date +%s.%N)
 

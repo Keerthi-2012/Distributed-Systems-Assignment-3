@@ -16,7 +16,7 @@ GEN=bin/gen_dataset
 want=${1:-all}
 gen() {   # gen <name> <N> <K> <S> <seed>
     if [ "$want" = "all" ] || [ "$want" = "$1" ]; then
-        $GEN "$2" "$3" "$4" "$5" "data/$1.in"
+        $GEN "$2" "$3" "$4" "$5" "../data/$1.in"
     fi
 }
 
@@ -26,5 +26,5 @@ gen medium  1000000 10 128 2002
 gen large  10000000 10 256 2003
 
 echo "--- md5 ---"
-md5sum data/*.in | tee results/dataset_md5.txt
-ls -la data/
+md5sum ../data/*.in | tee results/dataset_md5.txt
+ls -la ../data/

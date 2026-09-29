@@ -544,7 +544,7 @@ which gives a clear busiest interval; half the traffic goes to the first quarter
 of the servers, so per-server load is skewed — which is what makes
 `hash_server` routing worth measuring.
 
-Every benchmark row carries its own `correct` column, and `scripts/plot.py`
+Every benchmark row carries its own `correct` column, and `scripts/plot_q1.py`
 **discards any run that did not match `log_seq`** rather than averaging it in,
 reporting how many it dropped.
 

@@ -1,4 +1,0 @@
-32d8cdf9ecc48958369094d3aae58490  data/large.in
-5fe8affb6fab0d56c3a370776fd37821  data/medium.in
-88e4e2fab345264a5739bc097485ed89  data/small.in
-a0befdf33c8bd196949fbd591d804def  data/tiny.in

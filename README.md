@@ -88,9 +88,9 @@ Full instructions: **[Section2/run.md](Section2/run.md)**. Design notes:
 | `Q1_mapreduce/mapper.cpp` | counts a whole split, then emits one pair per distinct key (in-mapper combining) |
 | `Q1_mapreduce/combiner.cpp` | merges a mapper's own pairs before the shuffle; same format in and out |
 | `Q1_mapreduce/reducer.cpp` | merges every mapper's pairs, then computes averages, the busiest interval and the Top-K lists |
-| `common/analytics.h`, `common/analytics.cpp` | the shared `Stats` structure, how to add two together, and the text format they travel in |
-| `reference/log_seq.cpp` | HW2's sequential program — the correctness baseline |
-| `reference/log_mpi.cpp` | the MPI version, for the comparison |
+| `Q1_mapreduce/analytics.h`, `Q1_mapreduce/analytics.cpp` | the shared `Stats` structure, how to add two together, and the text format they travel in |
+| `Q1_mapreduce/reference/log_seq.cpp` | HW2's sequential program — the correctness baseline |
+| `Q1_mapreduce/reference/log_mpi.cpp` | the MPI version, for the comparison |
 
 ### Q2 — gRPC streaming (Python)
 
@@ -99,7 +99,7 @@ Full instructions: **[Section2/run.md](Section2/run.md)**. Design notes:
 | `Q2_grpc/proto/loganalytics.proto` | the interface: `LogAnalytics` (public) and `Worker` (internal) |
 | `Q2_grpc/src/coordinator.py` | accepts streams, routes batches to workers, combines their results to answer queries |
 | `Q2_grpc/src/worker.py` | counts the batches it is sent; hands back its running totals when asked |
-| `Q2_grpc/src/analytics.py` | the analytics themselves (the Python counterpart of `common/`) |
+| `Q2_grpc/src/analytics.py` | the analytics themselves (the Python counterpart of Q1's `analytics.h`) |
 | `Q2_grpc/src/stream_client.py` | replays a dataset file as a live stream |
 | `Q2_grpc/src/query_client.py` | prints the current analytics; also the query load tester |
 | `Q2_grpc/src/dashboard.py` | the live terminal dashboard |
@@ -108,22 +108,23 @@ Full instructions: **[Section2/run.md](Section2/run.md)**. Design notes:
 
 | Script | Purpose |
 | ------ | ------- |
-| `scripts/rce_setup.sh` | **one-time on RCE**: build, create the Python 3.12 venv, generate gRPC stubs, build datasets |
-| `scripts/make_data.sh` | regenerate the datasets (fixed seeds) |
-| `scripts/run_q1.sh` | run the MapReduce pipeline once, any number of map tasks, self-checking |
-| `scripts/verify_q1.sh` | Q1 correctness — 34 checks |
-| `scripts/verify_q2.py` | Q2 correctness — 76 checks |
-| `scripts/bench_q1.sh` | Q1 benchmark sweep (`sbatch`, 4 nodes) — also runs the MPI comparison |
-| `scripts/bench_q2.sh` | Q2 benchmark sweep (`sbatch`, 6 nodes) |
-| `scripts/bench_mpi.sh` | times the MPI program on its own |
-| `scripts/rce_start.sh` | start / stop the Q2 system across an allocation |
-| `scripts/run_local.sh` | start / stop the Q2 system on one machine |
-| `scripts/plot.py` | build the plots from the CSVs in `results/` |
+| `Q2_grpc/scripts/setup_python.sh` | **one-time on RCE for Q2**: Python 3.12 venv, grpcio, gRPC stubs |
+| `Q1_mapreduce/scripts/make_data.sh` | regenerate the datasets (fixed seeds) |
+| `Q1_mapreduce/scripts/run_q1.sh` | run the MapReduce pipeline once, any number of map tasks, self-checking |
+| `Q1_mapreduce/scripts/verify_q1.sh` | Q1 correctness — 34 checks |
+| `Q2_grpc/scripts/verify_q2.py` | Q2 correctness — 76 checks |
+| `Q1_mapreduce/scripts/bench_q1.sh` | Q1 benchmark sweep (`sbatch`, 6 nodes, one task each) — also runs the MPI comparison |
+| `Q2_grpc/scripts/bench_q2.sh` | Q2 benchmark sweep (`sbatch`, 6 nodes) |
+| `Q1_mapreduce/scripts/bench_mpi.sh` | times the MPI program on its own |
+| `Q2_grpc/scripts/rce_start.sh` | start / stop the Q2 system across an allocation |
+| `Q2_grpc/scripts/run_local.sh` | start / stop the Q2 system on one machine |
+| `Q1_mapreduce/scripts/plot_q1.py`, `Q2_grpc/scripts/plot_q2.py` | build each question's plots from its own CSVs |
 
 **Setup (once, on the RCE login node)**
 
 ```bash
-cd ~/HW3/Section2 && bash scripts/rce_setup.sh
+cd ~/HW3/Section2/Q1_mapreduce && make && bash scripts/make_data.sh
+cd ~/HW3/Section2/Q2_grpc     && bash scripts/setup_python.sh
 ```
 
 RCE's default `python3` is 3.6 and too old for grpcio, so Q2 always uses
@@ -133,27 +134,27 @@ RCE's default `python3` is 3.6 and too old for grpcio, so Q2 always uses
 
 ```bash
 salloc --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 --time=00:30:00
-cd ~/HW3/Section2
-bash scripts/run_q1.sh data/medium.in out.txt 4    # 4 map tasks, checks itself
-bash scripts/verify_q1.sh                          # 34 checks
+cd ~/HW3/Section2/Q1_mapreduce
+bash scripts/run_q1.sh ../data/medium.in out.txt 4  # 4 map tasks, checks itself
+bash scripts/verify_q1.sh                           # 34 checks
 exit
 
-sbatch scripts/bench_q1.sh                         # the benchmark, 4 nodes
+sbatch scripts/bench_q1.sh                          # the benchmark, 6 nodes
 ```
 
 **Run Q2 (gRPC)** — server on one compute node, clients on others:
 
 ```bash
-cd ~/HW3/Section2
+cd ~/HW3/Section2/Q2_grpc
 salloc --nodes=4 --ntasks-per-node=1 --cpus-per-task=4 --time=01:00:00
 bash scripts/rce_start.sh                     # coordinator on node 1, a worker on each other node
 COORD=$(cat logs/coord_addr.txt)              # e.g. node01:51087
 
 # from another terminal, on a node you hold:
 ssh node02 ; cd ~/HW3/Section2/Q2_grpc/src
-~/HW3/venv/bin/python3 dashboard.py     $(cat ../../logs/coord_addr.txt)
-~/HW3/venv/bin/python3 stream_client.py $(cat ../../logs/coord_addr.txt) ../../data/medium.in --rate 100000 --wait
-~/HW3/venv/bin/python3 query_client.py  $(cat ../../logs/coord_addr.txt) --final
+~/HW3/venv/bin/python3 dashboard.py     $(cat ../logs/coord_addr.txt)
+~/HW3/venv/bin/python3 stream_client.py $(cat ../logs/coord_addr.txt) ../../data/medium.in --rate 100000 --wait
+~/HW3/venv/bin/python3 query_client.py  $(cat ../logs/coord_addr.txt) --final
 
 bash scripts/rce_start.sh stop
 ```
@@ -220,6 +221,6 @@ cd report_build && python3 gen.py && pdflatex report.tex && cp report.pdf ../rep
 ## What is not in this repository
 
 Generated or machine-specific things are deliberately excluded: built binaries
-(`Section2/bin/`), datasets (`Section2/data/`, rebuilt by `scripts/make_data.sh`), logs,
+(`Section2/Q1_mapreduce/bin/`), datasets (`Section2/data/`, rebuilt by `Q1_mapreduce/scripts/make_data.sh`), logs,
 the Python virtualenv, generated gRPC stubs for Section 2 (they must match the installed
-grpcio version, so `rce_setup.sh` regenerates them), and personal notes.
+grpcio version, so `Q2_grpc/scripts/setup_python.sh` regenerates them), and personal notes.
