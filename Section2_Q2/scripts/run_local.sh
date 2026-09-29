@@ -14,7 +14,7 @@ ROOT=$(pwd)
 # so prefer a virtualenv: the project's .venv locally, or ~/HW3/venv on RCE.
 # Override with PY=... if yours lives somewhere else.
 if [ -z "${PY:-}" ]; then
-    for candidate in "$ROOT/../../.venv/bin/python3" "$HOME/HW3/venv/bin/python3"; do
+    for candidate in "$ROOT/../.venv/bin/python3" "$HOME/HW3/venv/bin/python3"; do
         [ -x "$candidate" ] && { PY=$candidate; break; }
     done
 fi
