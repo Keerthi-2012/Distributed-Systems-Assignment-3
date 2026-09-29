@@ -3,17 +3,22 @@
 import csv, collections, statistics, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-S2 = os.path.join(ROOT, "Section2", "results")
+Q1D = os.path.join(ROOT, "Section2", "Q1_mapreduce", "results")
+Q2D = os.path.join(ROOT, "Section2", "Q2_grpc", "results")
+
+# Node counts swept by the benchmark: N means N machines with one process each,
+# the same shape Assignment 2 measured Q7 with.
+NODES = (1, 2, 4, 6)
 B = os.path.dirname(os.path.abspath(__file__))
 
 def rows(p): return list(csv.DictReader(open(p)))
 def mean(rs, f): return statistics.mean(float(r[f]) for r in rs)
 def sel(rs, **kw): return [r for r in rs if all(r[k] == str(v) for k, v in kw.items())]
 
-q1   = rows(os.path.join(S2, "q1_bench.csv"))
-mpi  = rows(os.path.join(S2, "q1_mpi.csv"))
-q2   = rows(os.path.join(S2, "q2_bench.csv"))
-q2q  = rows(os.path.join(S2, "q2_queries.csv"))
+q1   = rows(os.path.join(Q1D, "q1_bench.csv"))
+mpi  = rows(os.path.join(Q1D, "q1_mpi.csv"))
+q2   = rows(os.path.join(Q2D, "q2_bench.csv"))
+q2q  = rows(os.path.join(Q2D, "q2_queries.csv"))
 s1   = rows(os.path.join(B, "sec1_q1_bench.csv"))
 
 def esc(s): return s.replace("_", r"\_").replace("&", r"\&").replace("%", r"\%")
@@ -38,7 +43,7 @@ s2q1_tbl = "\n".join(
     "%d & %s & %s & %s & %s & %s \\\\" % (
         t, f(q1row("small", t)[0]), f(q1row("medium", t)[0]), f(q1row("large", t)[0]),
         f(q1row("large", t)[1]), f(base["large"] / q1row("large", t)[0], 2) + r"$\times$")
-    for t in (1, 2, 4, 8))
+    for t in NODES)
 
 def mpirow(ds, p): return mean(sel(mpi, dataset=ds, procs=p), "total_s")
 mpi_tbl = "\n".join(
@@ -47,7 +52,7 @@ mpi_tbl = "\n".join(
         f(q1row("large", p)[0] / mpirow("large", p), 2) + r"$\times$",
         f(mpirow("large", 1) / mpirow("large", p), 2) + r"$\times$",
         f(base["large"] / q1row("large", p)[0], 2) + r"$\times$")
-    for p in (1, 2, 4, 8))
+    for p in NODES)
 
 # ---- Section 2 Q2 -----------------------------------------------------------
 def q2t(**kw): return mean(sel(q2, **kw), "throughput")
@@ -82,12 +87,16 @@ vals = dict(
     q1_ok=sum(1 for r in q1 if r["correct"] == "yes"),
     mpi_ok=sum(1 for r in mpi if r["correct"] == "yes"),
     q2_ok=sum(1 for r in q2 if r["correct"] == "yes"),
-    large_best=f(min(q1row("large", t)[0] for t in (1,2,4,8))),
-    large_speedup=f(base["large"] / q1row("large", 4)[0], 2),
-    mpi_best=f(mpirow("large", 4)),
-    mpi_speedup=f(mpirow("large", 1) / mpirow("large", 4), 2),
+    large_best=f(min(q1row("large", t)[0] for t in NODES)),
+    large_speedup=f(base["large"] / q1row("large", NODES[-1])[0], 2),
+    mpi_best=f(mpirow("large", NODES[-1])),
+    mpi_speedup=f(mpirow("large", 1) / mpirow("large", NODES[-1]), 2),
     q2_peak=thousands(rrv), q2_speedup=f(rrv / w1, 2),
     batch_gain=f(q2t(workers=4, strategy="round_robin", batch_size=1000, query_clients=0) / b1, 0),
+    nodes_max=NODES[-1],
+    ratio_1=f(q1row("large", 1)[0] / mpirow("large", 1), 2),
+    ratio_max=f(q1row("large", NODES[-1])[0] / mpirow("large", NODES[-1]), 2),
+    map_share=f(100.0 * q1row("large", 1)[1] / q1row("large", 1)[0], 0),
     shuffle_ratio=f(float(sel(q1, dataset="large", tasks=1)[0]["input_bytes"]) /
                     float(sel(q1, dataset="large", tasks=1)[0]["shuffle_bytes"]), 0),
 )

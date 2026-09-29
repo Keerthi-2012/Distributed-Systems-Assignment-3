@@ -233,7 +233,12 @@ answer however the input is divided. All thirty-four matched, as did all
 @@q1_ok@@ runs of the performance sweep described below.
 
 \subsection{Performance}
-Map tasks placed one per node across four nodes. Times in seconds.
+Map tasks placed \textbf{one per node}, sweeping 1, 2, 4 and 6 nodes. A task count of
+$N$ therefore means $N$ separate machines, never $N$ processes sharing one machine's
+cores. This is the allocation shape Assignment~2 used to measure the same Q7 workload
+(\texttt{-{}-nodes=N -{}-ntasks-per-node=1}), which is what allows the MapReduce and MPI
+figures below to be compared with each other and with that earlier work. Times in
+seconds.
 
 \begin{center}\small
 \begin{tabular}{@{}lrrrrr@{}}
@@ -245,29 +250,32 @@ Map tasks placed one per node across four nodes. Times in seconds.
 \end{tabular}
 \end{center}
 
-\textbf{The map stage is the computation.} It accounts for 96\% of the single-task run.
+\textbf{The map stage is the computation.} It accounts for @@map_share@@\% of the
+single-node run.
 Measured separately on a compute node, reading the 397\,MB input with \texttt{cat} takes
 $0.26$\,s while the mapper takes $13.26$\,s, of which $13.16$\,s is user CPU time. The
 work is parsing ten million lines of text, not transferring them, and the program is
 therefore compute-bound and scales with available cores.
 
-\textbf{Parallelism is limited by physical cores, not by the algorithm.} Speedup tracks
-the map stage closely up to four tasks (@@large_speedup@@$\times$ on four nodes). At
-eight tasks the map stage does not improve at all, because the scheduler places the
-second task on some nodes onto a sibling hyperthread of a core already in use; two
-processes sharing one physical core take twice as long each. The additional tasks still
-enlarge the sort and combine stages, so the total time rises slightly. This is a
-property of the allocation, not of the decomposition.
+\textbf{Speedup tracks the map stage across the whole sweep.} On the 10M-record input
+the pipeline reaches @@large_speedup@@$\times$ on @@nodes_max@@ nodes, against a linear
+ideal of $6\times$, and the map stage falls from $16.39$\,s to $3.16$\,s. Every added
+node is a whole machine, so there is no contention for cores between map tasks and no
+point at which adding one stops helping, which is what distinguishes this sweep from an
+earlier one that packed several tasks onto each node.
 
 \textbf{The serial tail is present but small.} The final gather, sort and reduce do not
-shrink as mappers are added; they grow from $0.22$\,s to $0.28$\,s, because more mappers
-emit more partial rows for the same keys. This is the serial fraction of Amdahl's law,
-and at under 6\% of the four-task run it is not the binding constraint here.
+shrink as mappers are added; they grow slightly, from $0.21$\,s to $0.25$\,s, because
+more mappers emit more partial rows for the same keys. This is the serial fraction of
+Amdahl's law. It is only $1.2$\,\% of the single-node run, but by @@nodes_max@@ nodes it
+is $6.9$\,\% of a much shorter run, and it is what bends the speedup curve away from
+linear.
 
-\textbf{Small inputs should not be distributed.} At 100k records the four-task run is
-barely faster than the single-task run and the eight-task run is clearly slower: process
-startup across nodes exceeds the work being parallelised. MapReduce carries a fixed
-overhead that is only amortised from roughly a million records upward.
+\textbf{Small inputs should not be distributed.} At 100k records the pipeline takes
+$0.349$\,s on one node and $0.298$\,s on six: a $1.17\times$ return for six times the
+hardware, because process startup and the fixed cost of five pipeline stages exceed the
+work being parallelised. The fixed overhead is only amortised from roughly a million
+records upward, where the same sweep returns $3.07\times$.
 
 \begin{figure}[htbp]
 \centering
@@ -281,29 +289,39 @@ growth of intermediate data with task count.}
 The same analytics were implemented with MPI, splitting the input by byte range and
 combining with \texttt{MPI\_Reduce} (\texttt{MPI\_SUM} for counts and sums,
 \texttt{MPI\_MIN} and \texttt{MPI\_MAX} for the extremes). Both systems were given equal
-core counts. MPI runs all ranks on one node, since Open MPI cannot launch across nodes
-in this environment; MapReduce distributes its tasks over four. All @@mpi_ok@@ MPI runs
-reproduced the sequential output.
+core counts \emph{and the same machines}: both run one process per node over 1, 2, 4 and
+6 nodes. An earlier version of this comparison confined MPI to a single node, because
+multi-node \texttt{mpirun} hung on this cluster; the cause was the network interface
+rather than the node count, and once Open MPI is told which subnet the compute nodes
+share, all @@mpi_ok@@ multi-node MPI runs reproduced the sequential output. The figures
+below therefore compare like with like.
 
 \begin{center}\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Processes} & \textbf{MPI} & \textbf{MapReduce} & \textbf{Ratio} & \textbf{MPI speedup} & \textbf{MapReduce speedup} \\
+\textbf{Nodes} & \textbf{MPI} & \textbf{MapReduce} & \textbf{Ratio} & \textbf{MPI speedup} & \textbf{MapReduce speedup} \\
 \midrule
 @@mpi_tbl@@
 \bottomrule
 \end{tabular}
 \end{center}
 
-\textbf{MPI is between 1.4 and 2.4 times faster at every size}, and the ratio is stable
-at about $2.1\times$ on the largest dataset. This is the expected outcome: MPI performs
+\textbf{MPI is faster at every size, but the gap narrows as the system widens}: on the
+10M-record input MapReduce takes @@ratio_1@@$\times$ as long as MPI on one node and
+@@ratio_max@@$\times$ on @@nodes_max@@. MapReduce in fact scales slightly better over
+this range ($4.68\times$ against MPI's $4.14\times$), because its larger constant costs
+are the part that parallelises, while MPI's final \texttt{MPI\_Reduce} does not. On the
+100k-record input the two are indistinguishable (within $4\%$), since neither is doing
+enough work for the difference to show. This is the expected outcome: MPI performs
 no shuffle, no sort, no serialisation to text and no process creation per stage. It
 holds its state in memory and reduces once at the end.
 
-\textbf{The two scale almost identically} --- @@mpi_speedup@@$\times$ and
-@@large_speedup@@$\times$ respectively at four processes --- so the parallel
-decomposition is equally effective in both. The difference is entirely in the constant
-factor, which makes it worth identifying where that constant comes from.
+\textbf{The two scale comparably} --- @@mpi_speedup@@$\times$ and
+@@large_speedup@@$\times$ respectively at @@nodes_max@@ nodes --- so the parallel
+decomposition is equally effective in both, and MapReduce's slight edge comes from
+having more parallelisable overhead to begin with. The difference in absolute speed is
+therefore a constant factor, which makes it worth identifying where that constant comes
+from.
 
 \subsection{Where the constant factor comes from}
 The two programs differ in how they represent state. Measured on the ten-million-record
@@ -343,9 +361,9 @@ everything measured here.
 \centering
 \includegraphics[width=\textwidth]{q1_vs_mpi.png}
 \caption{MapReduce against MPI on identical work and equal core counts. Left: wall-clock
-time against parallelism. Centre: the ratio, consistently above 1.0, meaning MPI is
-faster throughout. Right: both scale almost identically, so the difference lies in the
-constant factor rather than in the decomposition.}
+time against node count. Centre: the ratio, above 1.0 throughout, meaning MPI is faster,
+but falling as nodes are added. Right: both scale comparably, so the difference lies in
+the constant factor rather than in the decomposition.}
 \end{figure}
 
 \section{Real-Time Log Analytics with gRPC}

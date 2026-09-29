@@ -1,7 +1,7 @@
 #!/bin/bash
 # rce_start.sh - start Q2's coordinator and workers across an allocation.
 #
-# Inside `salloc --nodes=4 --ntasks-per-node=1`, from the Section2 folder:
+# Inside `salloc --nodes=4 --ntasks-per-node=1`, from this Q2_grpc folder:
 #
 #   bash scripts/rce_start.sh [workers_per_node] [strategy]
 #
@@ -15,7 +15,7 @@
 # recognise. So the ports are derived from our own user id by default.
 #
 # Then, as the RCE execution guide describes, run the clients from other nodes:
-#   ssh <node>; cd ~/HW3/Section2
+#   ssh <node>
 #   source ~/HW3/venv/bin/activate; cd ~/HW3/Section2/Q2_grpc/src
 #   python3 dashboard.py     <node1>:<port>
 #   python3 stream_client.py <node1>:<port> ../../data/medium.in --rate 100000
