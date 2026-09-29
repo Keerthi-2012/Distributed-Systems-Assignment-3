@@ -50,6 +50,14 @@ mkdir -p results
 # node, so the scratch directory is visible from all of them.
 WORK=$QDIR/results/work_${SLURM_JOB_ID:-$$}
 mkdir -p "$WORK"
+
+# EXPORT them. The srun stages below are written with single quotes so that
+# $SLURM_PROCID is expanded on each compute node rather than here - but that
+# also stops $WORK and $QDIR being expanded, and without exporting them the
+# remote shell sees empty strings. That is how job 99945 failed, trying to
+# write /shuf1_00.out at the filesystem root:
+#     /usr/bin/bash: line 2: /shuf1_00.out: Permission denied
+export QDIR WORK
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p results
 SUMMARY="results/dist_benchmark_summary.csv"

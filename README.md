@@ -46,34 +46,38 @@ questions not present here were not assigned to this team.
 ├── Section2_Q2/            Section 2 Q2 — streaming analytics, Python gRPC
 ├── Section3_Q2/            Section 3 Problem 2 — food ordering, gRPC
 ├── data/                   the shared datasets (generated, not in git)
-└── report.pdf              the combined report covering all four
+└── report.pdf              the combined report covering all four questions
 ```
 
 Inside every question folder the same shape repeats:
 
 ```
 <question>/
-├── doc/                    readme.md, run.md, report.pdf
+├── doc/                    readme.md, run.md (+ report.pdf, except Section3_Q2)
 ├── scripts/                the shell scripts: build, run, benchmark, submit
 ├── *.py / *.cpp            the code itself
 └── results/                CSVs and figures produced by the benchmarks
 ```
 
 Every question folder is self-contained, and its `doc/` folder carries the same
-three documents:
+documents:
 
 | File | What it is |
 | ---- | ---------- |
 | `doc/readme.md` | what the question asks, what was built, and why |
 | `doc/run.md` | the commands, the cluster rules, and a symptom/cause table |
-| `doc/report.pdf` | the write-up, with figures |
+| `doc/report.pdf` | the write-up, with figures — the three measured questions only |
+
+Section 3 Problem 2 has no separate report: the assignment asks there for a
+README that documents how to run the system and demonstrates it with multiple
+clients, which is what `Section3_Q2/doc/readme.md` does.
 
 Shell scripts live in `scripts/`; Python and C++ are code and sit at the
 question's top level.
 
-So there are **four** reports: one per question, plus `report.pdf` at the root
-that covers all three together. Start with the root one; go to a question's own
-report for the detail.
+So there are **four** reports: one for each of the three measured questions,
+plus `report.pdf` at the root covering all of them including Section 3. Start
+with the root one; go to a question's own report for the detail.
 
 ---
 
