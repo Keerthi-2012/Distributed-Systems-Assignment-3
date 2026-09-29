@@ -1,10 +1,20 @@
 #!/bin/bash
 #SBATCH --job-name=mapreduce_test
-#SBATCH --output=test_results_%j.out
-#SBATCH --error=test_results_%j.err
+#SBATCH --output=perf_results/test_results_%j.out
+#SBATCH --error=perf_results/test_results_%j.err
 #SBATCH --nodes=4
 #SBATCH --ntasks=4
 #SBATCH --cpus-per-task=1
+
+# Slurm writes the two files above relative to the directory you SUBMIT from,
+# not to this script's location, and it cannot expand variables in #SBATCH
+# lines. So submit from the question folder:
+#
+#     cd ~/HW3/Section1_Q1 && sbatch scripts/run_cluster_test.sh
+#
+# and the log lands in perf_results/ beside the results it describes. Submitting
+# from ~/HW3 instead used to scatter test_results_*.out across the home
+# directory.
 #SBATCH --time=00:10:00
 
 # Correctness test — ALL cases run distributed across 4 nodes using srun
@@ -17,6 +27,16 @@
 # because $SLURM_SUBMIT_DIR pointed somewhere with no code in it.
 QDIR=$(cd "$(dirname "$0")/.." && pwd)
 cd "$QDIR"
+mkdir -p perf_results
+
+# Intermediate files go in a per-job scratch directory, not in the question
+# folder. They used to be written beside mapper.py, so a run left chunk_*,
+# map_*.out, shuf1_*.out and comb_*.out lying next to the source, and two jobs
+# running at once would overwrite each other's. Home is shared by every compute
+# node, so the scratch directory is visible from all of them.
+WORK=$QDIR/perf_results/work_${SLURM_JOB_ID:-$$}
+mkdir -p "$WORK"
+trap 'rm -rf "$WORK"' EXIT
 
 PASS=0; FAIL=0
 
@@ -27,28 +47,28 @@ run_test() {
     echo "--- $LABEL ---"
 
     # Split A rows across 4 nodes (handles uneven: some nodes get fewer/zero rows)
-    split -d -a 2 -n l/$SLURM_NTASKS "$A_FILE" chunk_
+    split -d -a 2 -n l/$SLURM_NTASKS "$A_FILE" "$WORK/chunk_"
 
     # Stage 1: Mapper — distributed across all 4 nodes
     srun --ntasks=$SLURM_NTASKS bash -c "
         TID=\$(printf '%02d' \$SLURM_PROCID)
-        [ -s chunk_\${TID} ] && MATRIX_B_FILE=\"$B_ABS\" python3 mapper.py < chunk_\${TID} > map_\${TID}.out || touch map_\${TID}.out"
+        [ -s $WORK/chunk_\${TID} ] && MATRIX_B_FILE=\"$B_ABS\" python3 $QDIR/mapper.py < $WORK/chunk_\${TID} > $WORK/map_\${TID}.out || touch $WORK/map_\${TID}.out"
 
     # Stage 2: Shuffle/Sort 1 — local sort per node
     srun --ntasks=$SLURM_NTASKS bash -c '
         TID=$(printf "%02d" $SLURM_PROCID)
-        sort -k1,1 map_${TID}.out > shuf1_${TID}.out'
+        sort -k1,1 $WORK/map_${TID}.out > $WORK/shuf1_${TID}.out'
 
     # Stage 3: Combiner — distributed
     srun --ntasks=$SLURM_NTASKS bash -c '
         TID=$(printf "%02d" $SLURM_PROCID)
-        python3 combiner.py < shuf1_${TID}.out > comb_${TID}.out'
+        python3 $QDIR/combiner.py < $WORK/shuf1_${TID}.out > $WORK/comb_${TID}.out'
 
     # Stage 4: Global sort on master
-    sort -k1,1 comb_*.out > global_shuf2.out
+    sort -k1,1 "$WORK"/comb_*.out > "$WORK/global_shuf2.out"
 
     # Stage 5: Reducer on master
-    python3 reducer.py < global_shuf2.out > "$OUT"
+    python3 reducer.py < "$WORK/global_shuf2.out" > "$OUT"
 
     echo "  Output: $(cat $OUT | tr '\n' '|' | sed 's/|$//')"
 
@@ -58,7 +78,7 @@ run_test() {
     if echo "$RESULT" | grep -q "PASSED"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); fi
     echo ""
 
-    rm -f chunk_* map_*.out shuf1_*.out comb_*.out global_shuf2.out
+    rm -f "$WORK"/chunk_* "$WORK"/map_*.out "$WORK"/shuf1_*.out "$WORK"/comb_*.out "$WORK/global_shuf2.out"
 }
 
 echo "Node: $SLURMD_NODENAME | Tasks: $SLURM_NTASKS | Date: $(date)"

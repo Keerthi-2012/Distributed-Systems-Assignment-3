@@ -2,6 +2,16 @@
 #SBATCH --job-name=mapreduce_scaling
 #SBATCH --output=perf_results/scaling_%j.out
 #SBATCH --error=perf_results/scaling_%j.err
+
+# Slurm writes the two files above relative to the directory you SUBMIT from,
+# not to this script's location, and it cannot expand variables in #SBATCH
+# lines. So submit from the question folder:
+#
+#     cd ~/HW3/Section1_Q1 && sbatch scripts/benchmark_scaling_slurm.sh
+#
+# and the log lands in perf_results/ beside the results it describes. Submitting
+# from ~/HW3 instead used to scatter test_results_*.out across the home
+# directory.
 #SBATCH --nodes=7
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8

@@ -49,8 +49,8 @@ the code, so there is no generation step either.
 ```bash
 cd ~/HW3/Section1_Q1
 sbatch scripts/run_cluster_test.sh
-squeue -u $USER                 # wait for it to disappear
-cat test_results_<jobid>.out
+squeue -u $USER                          # wait for it to disappear
+cat perf_results/test_results_<jobid>.out
 ```
 
 Expected last line: `Results: 9 PASSED / 0 FAILED`.
@@ -61,10 +61,16 @@ tasks), a tall matrix (5000×10), a wide one (10×500), and the edge cases. Each
 result is checked against `verify.py`, which multiplies the matrices directly
 with no MapReduce at all.
 
-> **Submit from `~/HW3/Section1_Q1`, not from `~/HW3`.** The script begins with
-> `cd "$SLURM_SUBMIT_DIR"`, so submitting from the wrong folder makes it run
-> where `mapper.py` does not exist. It then "completes" in nine seconds with
-> `0 PASSED / 9 FAILED` and `can't open file 'combiner.py'` in the `.err` file.
+> **Submit from `~/HW3/Section1_Q1`.** The scripts now find the code by their own
+> location, so they run correctly from anywhere — but Slurm writes the job log
+> relative to the directory you submitted from, and cannot expand variables in
+> `#SBATCH` lines. Submit from the question folder and the log lands in
+> `perf_results/` beside the results it describes; submit from `~/HW3` and it
+> lands loose in your home directory.
+>
+> Intermediate files (`chunk_*`, `map_*.out`, …) go to
+> `perf_results/work_<jobid>/`, which is removed when the job ends, so nothing
+> is left beside the source.
 
 ---
 
@@ -76,7 +82,7 @@ They answer different questions, so both are worth running.
 
 ```bash
 sbatch scripts/benchmark_dist_slurm.sh
-cat benchmark_dist_results_<jobid>.out
+cat perf_results/benchmark_dist_results_<jobid>.out
 ```
 
 Seven matrix shapes, all at a fixed 4 nodes, timed per stage. Writes
