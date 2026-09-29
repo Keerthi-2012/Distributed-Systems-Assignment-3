@@ -78,3 +78,12 @@ Q1/perf_results/*_[0-9]*.err
 #   python3 -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. food_ordering.proto
 Q3/food_ordering_pb2.py
 Q3/food_ordering_pb2_grpc.py
+
+# ---- LaTeX intermediates from the per-question reports ---------------------
+# Each question builds its own report.pdf from its own report.tex; both are
+# tracked, the scratch files pdflatex leaves behind are not.
+*.aux
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
