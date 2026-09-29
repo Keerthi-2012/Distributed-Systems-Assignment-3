@@ -56,10 +56,25 @@ Section2/results/rce_*
 # generated for the editor, so it can resolve the C++ headers
 compile_commands.json
 
-# LaTeX intermediates from the report build
-report_build/*.aux
-report_build/*.log
-report_build/*.out
-report_build/report.pdf
-report_build/*.toc
 report_build/*.png
+
+# ---- report build directory ------------------------------------------------
+# The LaTeX working directory. report.pdf at the repository ROOT is the
+# deliverable and is tracked; everything used to build it is not.
+report_build/
+
+# ---- benchmark by-products, not results ------------------------------------
+# The reducer's raw output matrices: 8.9 MB of numbers nobody reads. The
+# answers are checked by verify.py as the benchmark runs, and the timings that
+# matter are extracted into the CSVs, which ARE tracked.
+Q1/perf_results/output_*.txt
+# Slurm's own per-job logs.
+Q1/perf_results/*_[0-9]*.out
+Q1/perf_results/*_[0-9]*.err
+
+# ---- generated gRPC stubs for Q3 -------------------------------------------
+# Same reason as Q2's stubs: generated code refuses to load unless it matches
+# the installed grpcio version, so it is regenerated on each machine with
+#   python3 -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. food_ordering.proto
+Q3/food_ordering_pb2.py
+Q3/food_ordering_pb2_grpc.py
